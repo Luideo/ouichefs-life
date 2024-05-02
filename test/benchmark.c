@@ -51,21 +51,22 @@ void insert_test(const char *dest_path, const char *text_test, int location ){
 	int src_fd = open(dest_path, O_RDONLY);
 	struct stat st;
 	fstat(dest_fd, &st);
-	int placement = 0;
 
 	switch(location) {
 		case BEGIN:
 			strncpy(test_type, "begin", strlen(test_type));
-			placement = 0;
-			
+			lseek(dest_fd, 0, SEEK_SET);
+			lseek(src_fd, 0 , SEEK_SET);
 			break;
 		case END:
 			strncpy(test_type, "end", strlen(test_type));
-			placement =  st.st_size;
+			lseek(dest_fd, 0, SEEK_END);
+			lseek(src_fd, 0 , SEEK_END);
 			break;
 		case MIDDLE:
 			strncpy(test_type, "middle", strlen(test_type));
-			placement =  st.st_size/2;
+			lseek(dest_fd, st.st_size/2, SEEK_SET);
+			lseek(src_fd, st.st_size/2, SEEK_SET);
 			break;
 		default:
 			fprintf(stderr, "unsupported location type\n");
@@ -74,31 +75,32 @@ void insert_test(const char *dest_path, const char *text_test, int location ){
 
 	char buf_src[MAX_BUFF];
 	char buf_dest[MAX_BUFF];
+	memset(buf_src,0,MAX_BUFF);
+	memset(buf_dest,0,MAX_BUFF);
+
 	int r;
-	int total;
-	int i ;
+	int i = strlen(text_test);
+
+	memmove(buf_dest , text_test , i);
 
 	begin = clock();
 
-	while(r = read(src_fd , buf_src, MAX_BUFF) > 0){
-		if(total >= placement){
-			write(dest_fd,text_test,strlen(text_test));
-		}
-		
+	while((r = read(src_fd , buf_src, MAX_BUFF) ) > 0){
+
 		write(dest_fd,buf_dest,i);
 		memset(buf_dest,0,MAX_BUFF);
 
 		i = r ;
 
-		strncpy(buf_dest,buf_src,r);
+		memmove(buf_dest,buf_src,r);
 		memset(buf_src,0,MAX_BUFF);
-		total +=r;
+
 	}
 
 	end = clock();
 
 
-	printf("%s insert test %ld _ %d\n", test_type, (end-begin) ) ;
+	printf("%s insert test %ld _\n", test_type, (end-begin) ) ;
 	
 	free(test_type);
 	close(dest_fd);
@@ -142,11 +144,19 @@ void remove_test(const char *dest_path, int nb_char, int location){
 			return;
 	}
 
-	char * buf[250];
+	char  buf_lect[MAX_BUFF];
+	char  buf_write[MAX_BUFF];
+	memset(buf_lect,0,MAX_BUFF);
+	memset(buf_write,0,MAX_BUFF);
 	int r;
 	begin = clock();
-	while(r = read(src_fd , buf, 250) > 0){
-		write(dest_fd,buf,r);
+	while((r = read(src_fd , buf_lect, MAX_BUFF)) > 0){
+		memmove(buf_write,buf_lect,MAX_BUFF);
+		//printf("%s \n=====\n %s \n", buf_lect,buf_write);
+		write(dest_fd,buf_write,r);
+		memset(buf_lect,0,MAX_BUFF);
+		memset(buf_write,0,MAX_BUFF);
+		
 	}
 	end = clock();
 
@@ -172,6 +182,7 @@ int main(int  argc , char ** argv) {
 	const char *text_test = "#_TEST STRING 123123_#";
 	
 	duplication_test(src_fd, "/mnt/ouiche/test1.txt", 1);
+	//duplication_test(src_fd, "test1.txt", 1);
 	insert_test( "/mnt/ouiche/test1.txt", text_test, BEGIN);
 	
 	duplication_test(src_fd, "/mnt/ouiche/test2.txt", 0);
