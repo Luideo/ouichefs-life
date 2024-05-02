@@ -222,10 +222,61 @@ static int ouichefs_open(struct inode *inode, struct file *file) {
 	return 0;
 }
 
+/*
+ * Read function for the ouichefs filesystem. This function allows to read data without
+ * the use of page cache.
+ */
+static ssize_t ouichefs_read(struct file *file, char __user *data, size_t len, loff_t *pos)
+{
+	pr_info("read: bonjou\n"); 
+
+	unsigned long to_be_copied = 0;
+	unsigned long copied_to_user = 0;
+
+	struct super_block *sb = file->f_inode->i_sb;
+	sector_t block = *pos / OUICHEFS_BLOCK_SIZE;
+	struct buffer_head *bh = sb_bread(sb, block);
+
+	if (!bh)
+		return -EIO;
+	
+	char *buffer = (char *)bh->b_data;
+
+	if(bh->b_size < len)
+		to_be_copied = bh->b_size;
+	else
+		to_be_copied = len;
+		
+
+	if (!(copied_to_user = copy_to_user(data, buffer, to_be_copied))) {
+		brelse(bh);
+		return -EFAULT;
+	}
+
+	*pos += copied_to_user;
+
+	brelse(bh);
+
+	return copied_to_user;
+}
+
+/*
+ * Write function for the ouichefs filesystem. This function allows to write data without
+ * the use of page cache.
+ */
+static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t len, loff_t *pos)
+{
+	pr_info("write: au voir\n");
+
+	return 0;
+}
+
 const struct file_operations ouichefs_file_ops = {
 	.owner = THIS_MODULE,
 	.open = ouichefs_open,
 	.llseek = generic_file_llseek,
 	.read_iter = generic_file_read_iter,
-	.write_iter = generic_file_write_iter
+	.write_iter = generic_file_write_iter,
+	.read = ouichefs_read,
+	.write = ouichefs_write
 };
