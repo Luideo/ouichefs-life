@@ -190,7 +190,8 @@ const struct address_space_operations ouichefs_aops = {
 	.write_end = ouichefs_write_end
 };
 
-static int ouichefs_open(struct inode *inode, struct file *file) {
+static int ouichefs_open(struct inode *inode, struct file *file)
+{
 	bool wronly = (file->f_flags & O_WRONLY) != 0;
 	bool rdwr = (file->f_flags & O_RDWR) != 0;
 	bool trunc = (file->f_flags & O_TRUNC) != 0;
@@ -218,7 +219,7 @@ static int ouichefs_open(struct inode *inode, struct file *file) {
 
 		brelse(bh_index);
 	}
-	
+
 	return 0;
 }
 
@@ -228,34 +229,57 @@ static int ouichefs_open(struct inode *inode, struct file *file) {
  */
 static ssize_t ouichefs_read(struct file *file, char __user *data, size_t len, loff_t *pos)
 {
-	pr_info("read: bonjou\n"); 
+	if (*pos >= file->f_inode->i_size)
+		return 0;
 
 	unsigned long to_be_copied = 0;
 	unsigned long copied_to_user = 0;
 
 	struct super_block *sb = file->f_inode->i_sb;
-	sector_t block = *pos / OUICHEFS_BLOCK_SIZE;
-	struct buffer_head *bh = sb_bread(sb, block);
+	sector_t iblock = *pos / OUICHEFS_BLOCK_SIZE;
+	struct ouichefs_file_index_block *index;
+	struct buffer_head *bh_index;
+	struct ouichefs_inode_info *ci = OUICHEFS_INODE(file->f_inode);
 
-	if (!bh)
+	/* If block number exceeds filesize, fail */
+	if (iblock >= OUICHEFS_BLOCK_SIZE >> 2)
+		return -EFBIG;
+
+	/* Read index block from disk */
+	bh_index = sb_bread(sb, ci->index_block);
+	if (!bh_index)
 		return -EIO;
-	
-	char *buffer = (char *)bh->b_data;
+	index = (struct ouichefs_file_index_block *)bh_index->b_data;
 
-	if(bh->b_size < len)
+	/* Get the block number for the current iblock */
+	int bno = index->blocks[iblock];
+
+	if (bno == 0) {
+		brelse(bh_index);
+		return -EIO;
+	}
+
+	struct buffer_head *bh = sb_bread(sb, bno);
+
+	if (!bh) {
+		brelse(bh_index);
+		return -EIO;
+	}
+
+	char *buffer = bh->b_data;
+
+	if (bh->b_size < len)
 		to_be_copied = bh->b_size;
 	else
 		to_be_copied = len;
-		
 
-	if (!(copied_to_user = copy_to_user(data, buffer, to_be_copied))) {
-		brelse(bh);
-		return -EFAULT;
-	}
+	copied_to_user = to_be_copied - copy_to_user(data, buffer, to_be_copied);
 
 	*pos += copied_to_user;
+	file->f_pos = *pos;
 
 	brelse(bh);
+	brelse(bh_index);
 
 	return copied_to_user;
 }
@@ -264,12 +288,14 @@ static ssize_t ouichefs_read(struct file *file, char __user *data, size_t len, l
  * Write function for the ouichefs filesystem. This function allows to write data without
  * the use of page cache.
  */
+/*
 static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t len, loff_t *pos)
 {
 	pr_info("write: au voir\n");
 
 	return 0;
 }
+*/
 
 const struct file_operations ouichefs_file_ops = {
 	.owner = THIS_MODULE,
@@ -277,6 +303,6 @@ const struct file_operations ouichefs_file_ops = {
 	.llseek = generic_file_llseek,
 	.read_iter = generic_file_read_iter,
 	.write_iter = generic_file_write_iter,
-	.read = ouichefs_read,
-	.write = ouichefs_write
+	.read = ouichefs_read
+	// .write = ouichefs_write
 };
