@@ -293,7 +293,84 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t
 {
 	pr_info("write: au voir\n");
 
-	return 0;
+	pr_info("pos: %lld\n", *pos);
+	pr_info("len: %zu\n", len);
+	pr_info("file->f_pos: %lld\n", file->f_pos);
+
+	struct inode *inode = file->f_inode;
+	struct super_block *sb = inode->i_sb;
+	struct ouichefs_inode_info *ci = OUICHEFS_INODE(inode);
+	struct ouichefs_file_index_block *index;
+	struct buffer_head *bh_index, *bh;
+	char *buffer;
+	size_t to_be_written, written = 0;
+	sector_t iblock;
+	int bno;
+
+	if (*pos >= OUICHEFS_MAX_FILESIZE)
+		return -EFBIG;
+
+	while (len > 0) {
+		// Calculer le bloc logique où écrire
+		iblock = *pos / OUICHEFS_BLOCK_SIZE;
+
+		// Lire l'index du fichier
+		bh_index = sb_bread(sb, ci->index_block);
+		if (!bh_index)
+			return -EIO;
+		index = (struct ouichefs_file_index_block *)bh_index->b_data;
+
+		// Vérifier si le bloc est déjà alloué
+		if (index->blocks[iblock] == 0) {
+			// Allouer un nouveau bloc
+			bno = get_free_block(OUICHEFS_SB(sb));
+			if (!bno) {
+				brelse(bh_index);
+				return -ENOSPC;
+			}
+			index->blocks[iblock] = bno;
+			mark_buffer_dirty(bh_index);
+			sync_dirty_buffer(bh_index);
+		} else {
+			bno = index->blocks[iblock];
+		}
+
+		// Lire ou initialiser le bloc de données
+		bh = sb_bread(sb, bno);
+		if (!bh) {
+			brelse(bh_index);
+			return -EIO;
+		}
+		buffer = bh->b_data;
+
+		// Calculer la quantité de données à écrire dans ce bloc
+		to_be_written = min(len, (size_t)(OUICHEFS_BLOCK_SIZE - (*pos % OUICHEFS_BLOCK_SIZE)));
+
+		// Copier les données de l'utilisateur dans le bloc de données
+		if (copy_from_user(buffer + (*pos % OUICHEFS_BLOCK_SIZE), data, to_be_written)) {
+			brelse(bh);
+			brelse(bh_index);
+			return -EFAULT;
+		}
+
+		mark_buffer_dirty(bh);
+		sync_dirty_buffer(bh);
+		brelse(bh);
+		brelse(bh_index);
+
+		*pos += to_be_written;
+		data += to_be_written;
+		len -= to_be_written;
+		written += to_be_written;
+
+		// Mettre à jour la taille du fichier si nécessaire
+		if (*pos > inode->i_size) {
+			inode->i_size = *pos;
+			mark_inode_dirty(inode);
+		}
+	}
+
+	return written;
 }
 */
 
