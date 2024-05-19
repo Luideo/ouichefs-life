@@ -119,7 +119,7 @@ void read_test(const char * src){
     int src_fd = open(src,O_RDONLY);
     if(src_fd == -1 ){
         fprintf(stdout, "Fichier non_existant\n");
-		EXIT_FAILURE;
+		return;
     }
     struct stat st;
 	fstat(src_fd, &st);
@@ -259,82 +259,82 @@ int main(int  argc , char ** argv) {
 	
 	if(argc < 2) {
 		fprintf(stdout, "Usage: benchmark <option> <path_to_source_file>\n");
-        fprintf(stdout, "-d : duplication\n-r :read\n-w :write append\n-ws :write at the start\n-wm :write in the middle\n-wa :write in a new\n");
-        fprintf(stdout, "attention pour les writes les fichiers rsique d'être détruits\n");
-		EXIT_FAILURE;
+		fprintf(stdout, "-d : duplication\n-r :read\n-w :write append\n-ws :write at the start\n-wm :write in the middle\n-wa :write in a new\n");
+		fprintf(stdout, "attention pour les writes les fichiers risquent d'être détruits\n");
+		return EXIT_FAILURE;
 	}
 
-    switch (toParam(argv[1]))
-    {
-    case 1 :
-        /*
-        * Test de duplication : Read+Write
-        */
-        if(argc < 3){
-            fprintf(stdout, "Usage: benchmark -d <path_to_source_file>\n");
-            EXIT_FAILURE;
-            break;
-        }
-        duplication_test(argv[2] , "/mnt/ouiche/duplicationtest.txt",1);
-        break;
-    case 2 :
-        /*
-        * Test de Read
-        */
-        if(argc < 3 ){
-            fprintf(stdout, "Usage: benchmark -r <path_to_source_file>\n");
-            EXIT_FAILURE;
-            break;
-        }
-        read_test(argv[2]);
-        break;
+	switch (toParam(argv[1]))
+	{
+	case 1 :
+		/*
+		* Test de duplication : Read+Write
+		*/
+		if(argc < 3){
+			fprintf(stdout, "Usage: benchmark -d <path_to_source_file>\n");
+			return EXIT_FAILURE;
+			break;
+		}
+		duplication_test(argv[2] , "/mnt/ouiche/duplicationtest.txt",1);
+		break;
+	case 2 :
+		/*
+		* Test de Read
+		*/
+		if(argc < 3 ){
+			fprintf(stdout, "Usage: benchmark -r <path_to_source_file>\n");
+			return EXIT_FAILURE;
+			break;
+		}
+		read_test(argv[2]);
+		break;
 
-    case 3 :
-        /*
-        * test write : append un fichier
-        */
-        if(argc == 3){
-            write_append(argv[2]);
-        }else 
-            write_append("/mnt/ouiche/appendwritetest.txt");
-        break;
-    
-    case 4 :
-        /*
-        * test write : debut d'un fichier
-        */
-        if(argc == 3){
-            write_start(argv[2]);
-        }else 
-            write_start("/mnt/ouiche/startwritetest.txt");
-        break;
+	case 3 :
+		/*
+		* test write : append un fichier
+		*/
+		if(argc == 3){
+			write_append(argv[2]);
+		}else 
+			write_append("/mnt/ouiche/appendwritetest.txt");
+		break;
+	
+	case 4 :
+		/*
+		* test write : debut d'un fichier
+		*/
+		if(argc == 3){
+			write_start(argv[2]);
+		}else 
+			write_start("/mnt/ouiche/startwritetest.txt");
+		break;
 
-    case 5 :
-        /*
-        * test write : milieu d'un fichier
-        */
-        if(argc == 3){
-            write_mid(argv[2]);
-        }else 
-            write_mid("/mnt/ouiche/midwritetest.txt");
-        break;
-    
-    case 6 :
-        /*
-        * test write : ecriture dans un fichier vierge
-        */
-        if(argc == 3){
-            write_new(argv[2]);
-        }else 
-            write_new("/mnt/ouiche/newwritetest.txt");
-        break;
+	case 5 :
+		/*
+		* test write : milieu d'un fichier
+		*/
+		if(argc == 3){
+			write_mid(argv[2]);
+		}else 
+			write_mid("/mnt/ouiche/midwritetest.txt");
+		break;
+	
+	case 6 :
+		/*
+		* test write : ecriture dans un fichier vierge
+		*/
+		if(argc == 3){
+			write_new(argv[2]);
+		}else 
+			write_new("/mnt/ouiche/newwritetest.txt");
+		break;
 
-    default:
-        fprintf(stdout, "Usage: benchmark <option> <path_to_source_file>\n");
-        fprintf(stdout, "-d : duplication\n-r :read\n-w :write append\n-ws :write at the start\n-wm :write in the middle\n-wa :write in a new\n");
-        EXIT_FAILURE;
-        break;
-    } 
+	default:
+		fprintf(stdout, "Usage: benchmark <option> <path_to_source_file>\n");
+		fprintf(stdout, "-d : duplication\n-r :read\n-w :write append\n-ws :write at the start\n-wm :write in the middle\n-wa :write in a new\n");
+		return EXIT_FAILURE;
+		break;
+	} 
 
 
 	return 0;
