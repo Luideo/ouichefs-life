@@ -268,6 +268,9 @@ static ssize_t ouichefs_read(struct file *file, char __user *data, size_t len, l
 
 	char *buffer = bh->b_data;
 
+	// get data from the buffer from the current position
+	buffer += *pos % OUICHEFS_BLOCK_SIZE;
+
 	if (bh->b_size < len)
 		to_be_copied = bh->b_size;
 	else
@@ -288,7 +291,6 @@ static ssize_t ouichefs_read(struct file *file, char __user *data, size_t len, l
  * Write function for the ouichefs filesystem. This function allows to write data without
  * the use of page cache.
  */
-/*
 static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t len, loff_t *pos)
 {
 	pr_info("write: au voir\n");
@@ -306,6 +308,10 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t
 	size_t to_be_written, written = 0;
 	sector_t iblock;
 	int bno;
+
+	if (file->f_flags & O_APPEND) {
+		*pos = inode->i_size;
+	}
 
 	if (*pos >= OUICHEFS_MAX_FILESIZE)
 		return -EFBIG;
@@ -372,7 +378,6 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t
 
 	return written;
 }
-*/
 
 const struct file_operations ouichefs_file_ops = {
 	.owner = THIS_MODULE,
@@ -380,6 +385,6 @@ const struct file_operations ouichefs_file_ops = {
 	.llseek = generic_file_llseek,
 	.read_iter = generic_file_read_iter,
 	.write_iter = generic_file_write_iter,
-	.read = ouichefs_read
-	// .write = ouichefs_write
+	.read = ouichefs_read,
+	.write = ouichefs_write
 };
