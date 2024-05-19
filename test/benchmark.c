@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -11,190 +12,330 @@
 #define END	1
 #define MIDDLE	2
 #define MAX_BUFF 256
+#define NBCHAR 10
+#define WRI "TEST WRITE"
+#define SIZEWRI 11
 
 /*
- * return : int : fd du fichier nouvellement créé (duplicata)
- * return : -1 si erreur
- */
-void duplication_test(int src_fd, const char *dest_path, int testing) {
-	lseek(src_fd, 0, SEEK_SET);
+* Duplique le fichier src_path vers dest_path
+*/
+
+void duplication_test(const char * src_path, const char *dest_path, int testing) {
+
+	int src_fd = open(src_path, O_RDWR );
 	int dest_fd = open(dest_path, O_CREAT | O_RDWR | O_TRUNC ,0600);
 
-	if(dest_fd < 0){
+	if(dest_fd < 0 ||  src_fd < 0){
 		fprintf(stderr, "duplication_test: error during file creation\n");
 		return ;
 	}
 	
 	clock_t begin = clock();
 	
-	char buf2[250];
-	memset(buf2,0,sizeof(buf2));
+    int totalread = 0;
+    int totalwritten = 0;
+	char buf2[MAX_BUFF];
+	memset(buf2,0,MAX_BUFF);
 	int k ; 
-	while( (k = read(src_fd,buf2,sizeof(buf2))) > 0){
-		write(dest_fd, buf2, k);
-		memset(buf2,0,sizeof(buf2));
+	while( (k = read(src_fd,buf2,MAX_BUFF)) > 0){
+        totalread+=k;
+		totalwritten += write(dest_fd, buf2, k);
+		memset(buf2,0,MAX_BUFF);
 	}
 	
 	clock_t end = clock();
 	close(dest_fd);
 	if(testing)
-		printf("duplication test: %ld\n", (end-begin));
+		printf("duplication test: temps:%ld | lecture: %d | Ecriture: %d\n", (end-begin), totalread, totalwritten);
 }
 
 /*
- * INSERTION DANS LE FICHIER (sur la duplication)
- */
-void insert_test(const char *dest_path, const char *text_test, int location ){
-	char *test_type = malloc(7 * sizeof(char));
-	clock_t begin, end;
-	int dest_fd = open(dest_path, O_WRONLY);
-	int src_fd = open(dest_path, O_RDONLY);
-	struct stat st;
-	fstat(dest_fd, &st);
+lit nb_char caractère depuis le début du fichier
+*/
 
-	switch(location) {
-		case BEGIN:
-			strncpy(test_type, "begin", strlen(test_type));
-			lseek(dest_fd, 0, SEEK_SET);
-			lseek(src_fd, 0 , SEEK_SET);
-			break;
-		case END:
-			strncpy(test_type, "end", strlen(test_type));
-			lseek(dest_fd, 0, SEEK_END);
-			lseek(src_fd, 0 , SEEK_END);
-			break;
-		case MIDDLE:
-			strncpy(test_type, "middle", strlen(test_type));
-			lseek(dest_fd, st.st_size/2, SEEK_SET);
-			lseek(src_fd, st.st_size/2, SEEK_SET);
-			break;
-		default:
-			fprintf(stderr, "unsupported location type\n");
-			return;
-	}
+int read_start(int src_fd , int nb_char){
+    lseek(src_fd, 0, SEEK_SET);
 
-	char buf_src[MAX_BUFF];
-	char buf_dest[MAX_BUFF];
-	memset(buf_src,0,MAX_BUFF);
-	memset(buf_dest,0,MAX_BUFF);
+    char buff[nb_char+1];
+    memset(buff,0,nb_char+1);
 
-	int r;
-	int i = strlen(text_test);
+    int ret = read(src_fd,buff,nb_char);
+    char * tmp = buff;
+    printf("%s\n",tmp);
 
-	memmove(buf_dest , text_test , i);
-
-	begin = clock();
-
-	while((r = read(src_fd , buf_src, MAX_BUFF) ) > 0){
-
-		write(dest_fd,buf_dest,i);
-		memset(buf_dest,0,MAX_BUFF);
-
-		i = r ;
-
-		memmove(buf_dest,buf_src,r);
-		memset(buf_src,0,MAX_BUFF);
-
-	}
-
-	end = clock();
-
-
-	printf("%s insert test %ld _\n", test_type, (end-begin) ) ;
-	
-	free(test_type);
-	close(dest_fd);
-	close(src_fd);
+    return ret;
 }
 
 /*
- * SUPPRESSION DANS LE FICHIER (sur la duplication)
- */
-void remove_test(const char *dest_path, int nb_char, int location){
-	char *test_type = malloc(7 * sizeof(char));
-	clock_t begin, end;
-	int dest_fd = open(dest_path, O_WRONLY);
-	int src_fd;
-	struct stat st;
-	if(location != END)
-		src_fd = open(dest_path, O_RDONLY);
+Lit entièrement le fichier 
+*/
+int read_all(int src_fd){
+    lseek(src_fd,0,SEEK_SET);
 
-	switch(location) {
-		case BEGIN:
-			strncpy(test_type, "begin", strlen(test_type));
-			lseek(dest_fd, 0, SEEK_SET);
-			lseek(src_fd, nb_char, SEEK_SET);
-			break;
-		case END:
-			strncpy(test_type, "end", strlen(test_type));
-			fstat(dest_fd, &st);
-			begin = clock();
-			ftruncate(dest_fd, st.st_size-nb_char);
-			end = clock();
-			goto finish;
-			break;
-		case MIDDLE:
-			strncpy(test_type, "middle", strlen(test_type));
-			fstat(dest_fd, &st);
-			lseek(dest_fd, st.st_size/2, SEEK_SET);
-			lseek(src_fd, (st.st_size/2)+nb_char, SEEK_SET);
-			break;
-		default:
-			fprintf(stderr, "unsupported location type\n");
-			return;
-	}
+    int total= 0;
+    char buff[MAX_BUFF];
+    memset(buff,0,MAX_BUFF);
+    int r = 0;
 
-	char  buf_lect[MAX_BUFF];
-	char  buf_write[MAX_BUFF];
-	memset(buf_lect,0,MAX_BUFF);
-	memset(buf_write,0,MAX_BUFF);
-	int r;
-	begin = clock();
-	while((r = read(src_fd , buf_lect, MAX_BUFF)) > 0){
-		memmove(buf_write,buf_lect,MAX_BUFF);
-		//printf("%s \n=====\n %s \n", buf_lect,buf_write);
-		write(dest_fd,buf_write,r);
-		memset(buf_lect,0,MAX_BUFF);
-		memset(buf_write,0,MAX_BUFF);
-		
-	}
-	end = clock();
+    while((r = read(src_fd,buff,MAX_BUFF-1)) > 0  ){
+        total+=r;
+        printf("%s",buff);
+        memset(buff,0,MAX_BUFF);
+    }
 
-finish:
-	if(location != END)
-		close(src_fd);
+    return total;
+}
 
-	close(dest_fd);
-	printf("%s remove test %ld\n", test_type, (end-begin));
-	free(test_type);
-} 
+int read_mid(int src_fd , int nb_char , int pos){
+    lseek(src_fd,pos,SEEK_SET);
 
+    char buff[nb_char+1];
+    memset(buff,0,nb_char+1);
+
+    int ret = read(src_fd,buff,nb_char);
+    printf("%s\n",buff);
+
+    return ret;
+}
+
+int read_empty(){
+    int src_fd = open("/mnt/ouiche/readempty.txt" , O_TRUNC | O_CREAT |O_RDWR, 0666);
+    if(src_fd < 0){
+        return -1 ;
+    }
+    
+    char buff[MAX_BUFF];
+    memset(buff , 0 , MAX_BUFF);
+
+    int ret = 0;
+    ret = read(src_fd,buff,MAX_BUFF);
+    printf("%s\n",buff);
+
+    close(src_fd);
+    return ret ;
+}
+
+void read_test(const char * src){
+    int src_fd = open(src,O_RDONLY);
+    if(src_fd == -1 ){
+        fprintf(stdout, "Fichier non_existant\n");
+		EXIT_FAILURE;
+    }
+    struct stat st;
+	fstat(src_fd, &st);
+
+    int be = read_start(src_fd , NBCHAR);
+    int mid = read_mid(src_fd, NBCHAR , st.st_size/2);
+    int emp = read_empty();
+    int all = read_all(src_fd);
+
+    printf("\nRead au Debut: lecture: %d | attendu: %d \n",be,(int)( (NBCHAR>st.st_size)? st.st_size:NBCHAR ) );
+    printf("Read au Milieu: lecture: %d | attendu: %d \n",mid,(int)( (NBCHAR>st.st_size/2)? st.st_size/2:NBCHAR ) );
+    printf("Read vide: lecture: %d | attendu: %d \n",emp, 0 );
+    printf("Read entier: lecture: %d | attendu: %d \n",all, (int)st.st_size );
+
+    close(src_fd);
+}
+
+int write_append(const char * src){
+    int written = 0;
+    int src_fd = open(src, O_CREAT | O_WRONLY | O_APPEND, 0666);
+
+    if(src_fd < 0){
+        fprintf(stdout, "Fichier non_existant\n");
+        return -1;
+    }
+    struct stat st;
+    fstat(src_fd, &st);
+    int taille_avant= st.st_size; 
+
+    written = write(src_fd,WRI, SIZEWRI);
+    
+	fstat(src_fd, &st);
+
+    close(src_fd);
+
+    printf("Write append:  ecriture: %d | attendu: %d \n" , written , SIZEWRI);
+    printf("Write append:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant + SIZEWRI);
+    return written;
+}
+
+int write_new(const char * src){
+    int written = 0;
+    int src_fd = open(src, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+
+    if(src_fd < 0){
+        fprintf(stdout, "Fichier non_existant\n");
+        return -1;
+    }
+    struct stat st;
+    fstat(src_fd, &st);
+    int taille_avant= st.st_size; 
+
+    written = write(src_fd,WRI, SIZEWRI);
+
+    fstat(src_fd, &st);
+
+    close(src_fd);
+    printf("Write new:  ecriture: %d | attendu: %d \n" , written , SIZEWRI);
+    printf("Write new:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant + SIZEWRI);
+    return written;
+}
+
+int write_start(const char * src){
+    int written = 0;
+    int src_fd = open(src, O_CREAT | O_WRONLY , 0666);
+
+    if(src_fd < 0){
+        fprintf(stdout, "Fichier non_existant\n");
+        return -1;
+    }
+
+    struct stat st;
+    fstat(src_fd, &st);
+    int taille_avant= st.st_size; 
+
+    written = write(src_fd,WRI, SIZEWRI);
+
+    fstat(src_fd, &st);
+
+    close(src_fd);
+    printf("Write start:  ecriture: %d | attendu: %d \n" , written , SIZEWRI);
+    printf("Write start:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant);
+    return written;
+}
+
+int write_mid(const char * src){
+    int written = 0;    
+    int src_fd = open(src, O_CREAT | O_WRONLY , 0666);
+
+    if(src_fd < 0){
+        fprintf(stdout, "Fichier non_existant\n");
+        return -1;
+    }
+
+    struct stat st;
+	fstat(src_fd, &st);
+    int taille_avant= st.st_size;
+    lseek(src_fd,st.st_size/2,SEEK_SET);
+
+    written = write(src_fd,WRI, SIZEWRI);
+
+    fstat(src_fd, &st);
+
+    close(src_fd);
+    printf("Write mid:  ecriture: %d | attendu: %d \n" , written , SIZEWRI);
+    printf("Write mid:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant);
+    return written;
+}
+
+int toParam(const char * param){
+    if(strcmp("-d" , param) == 0){
+        return 1;
+    }
+    if(strcmp("-r" , param) == 0){
+        return 2;
+    }
+    if(strcmp("-w" , param) == 0){
+        return 3;
+    }
+
+    if(strcmp("-ws" , param) == 0){
+        return 4;
+    }
+
+    if(strcmp("-wm" , param) == 0){
+        return 5;
+    }
+
+    if(strcmp("-wa" , param) == 0){
+        return 6;
+    }
+
+    return 0;
+}
 
 int main(int  argc , char ** argv) {
 	
-	if(argc != 2) {
-		fprintf(stderr, "Usage: benchmark <path_to_source_file>\n");
+	if(argc < 2) {
+		fprintf(stdout, "Usage: benchmark <option> <path_to_source_file>\n");
+        fprintf(stdout, "-d : duplication\n-r :read\n-w :write append\n-ws :write at the start\n-wm :write in the middle\n-wa :write in a new\n");
+        fprintf(stdout, "attention pour les writes les fichiers rsique d'être détruits\n");
 		EXIT_FAILURE;
 	}
 
-	int src_fd = open(argv[1], O_RDONLY); 
+    switch (toParam(argv[1]))
+    {
+    case 1 :
+        /*
+        * Test de duplication : Read+Write
+        */
+        if(argc < 3){
+            fprintf(stdout, "Usage: benchmark -d <path_to_source_file>\n");
+            EXIT_FAILURE;
+            break;
+        }
+        duplication_test(argv[2] , "/mnt/ouiche/duplicationtest.txt",1);
+        break;
+    case 2 :
+        /*
+        * Test de Read
+        */
+        if(argc < 3 ){
+            fprintf(stdout, "Usage: benchmark -r <path_to_source_file>\n");
+            EXIT_FAILURE;
+            break;
+        }
+        read_test(argv[2]);
+        break;
 
-	const char *text_test = "#_TEST STRING 123123_#";
-	
-	duplication_test(src_fd, "/mnt/ouiche/test1.txt", 1);
-	//duplication_test(src_fd, "test1.txt", 1);
-	insert_test( "/mnt/ouiche/test1.txt", text_test, BEGIN);
-	
-	duplication_test(src_fd, "/mnt/ouiche/test2.txt", 0);
-	insert_test("/mnt/ouiche/test2.txt", text_test, END);
+    case 3 :
+        /*
+        * test write : append un fichier
+        */
+        if(argc == 3){
+            write_append(argv[2]);
+        }else 
+            write_append("/mnt/ouiche/appendwritetest.txt");
+        break;
+    
+    case 4 :
+        /*
+        * test write : debut d'un fichier
+        */
+        if(argc == 3){
+            write_start(argv[2]);
+        }else 
+            write_start("/mnt/ouiche/startwritetest.txt");
+        break;
 
-	duplication_test(src_fd, "/mnt/ouiche/test3.txt", 0);
-	insert_test("/mnt/ouiche/test3.txt", text_test, MIDDLE);
+    case 5 :
+        /*
+        * test write : milieu d'un fichier
+        */
+        if(argc == 3){
+            write_mid(argv[2]);
+        }else 
+            write_mid("/mnt/ouiche/midwritetest.txt");
+        break;
+    
+    case 6 :
+        /*
+        * test write : ecriture dans un fichier vierge
+        */
+        if(argc == 3){
+            write_new(argv[2]);
+        }else 
+            write_new("/mnt/ouiche/newwritetest.txt");
+        break;
 
-	duplication_test(src_fd, "/mnt/ouiche/test4.txt", 0);
-	remove_test("/mnt/ouiche/test4.txt", 10, BEGIN);
+    default:
+        fprintf(stdout, "Usage: benchmark <option> <path_to_source_file>\n");
+        fprintf(stdout, "-d : duplication\n-r :read\n-w :write append\n-ws :write at the start\n-wm :write in the middle\n-wa :write in a new\n");
+        EXIT_FAILURE;
+        break;
+    } 
 
-	close(src_fd);
 
 	return 0;
 }
