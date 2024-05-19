@@ -15,6 +15,7 @@
 
 #include "ouichefs.h"
 #include "bitmap.h"
+#include "ouicheioctl.h"
 
 /*
  * Map the buffer_head passed in argument with the iblock-th block of the file
@@ -379,6 +380,31 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t
 	return written;
 }
 
+/*
+ * ioctl
+ */
+static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
+	switch (cmd) {
+		case USED_BLKS:
+			u32 used_blocks = f->f_inode->i_blocks;
+			char used_blocks_char[64];
+			snprintf(used_blocks_char, 64, "%d", used_blocks);
+			if(copy_to_user((char *) arg, used_blocks_char, sizeof(used_blocks_char))){
+				pr_info("ouiche_ioctl: copy_to_user failed\n");
+				return -EFAULT;
+			}
+			return 0;
+		case PART_FILLED_BLKS:
+		case INTERN_FRAG_WASTE:
+		case USED_BLKS_INFO:
+			pr_info("ouiche_ioctl: command not implemented yet\n");
+			return -ENOTTY;
+		default:		
+			pr_info("ouiche_ioctl: unknown command\n");
+			return -ENOTTY;
+	}
+}
+
 const struct file_operations ouichefs_file_ops = {
 	.owner = THIS_MODULE,
 	.open = ouichefs_open,
@@ -386,5 +412,6 @@ const struct file_operations ouichefs_file_ops = {
 	.read_iter = generic_file_read_iter,
 	.write_iter = generic_file_write_iter,
 	.read = ouichefs_read,
-	.write = ouichefs_write
+	.write = ouichefs_write,
+	.unlocked_ioctl = ouichefs_unlocked_ioctl
 };
