@@ -53,13 +53,16 @@ void duplication_test(const char * src_path, const char *dest_path, int testing)
 lit nb_char caractère depuis le début du fichier
 */
 
-int read_start(int src_fd , int nb_char){
+int read_start(int src_fd , int nb_char , clock_t * time){
 	lseek(src_fd, 0, SEEK_SET);
 
+	clock_t begin = clock();
 	char buff[nb_char+1];
 	memset(buff,0,nb_char+1);
 
 	int ret = read(src_fd,buff,nb_char);
+	clock_t end = clock();
+	*time = (end-begin);
 	char * tmp = buff;
 	printf("%s\n",tmp);
 
@@ -69,36 +72,40 @@ int read_start(int src_fd , int nb_char){
 /*
 Lit entièrement le fichier
 */
-int read_all(int src_fd){
+int read_all(int src_fd , clock_t * time){
 	lseek(src_fd,0,SEEK_SET);
 
 	int total= 0;
 	char buff[MAX_BUFF];
 	memset(buff,0,MAX_BUFF);
 	int r = 0;
-
+	clock_t begin = clock();
 	while((r = read(src_fd,buff,MAX_BUFF-1)) > 0  ){
 		total+=r;
 		printf("%s",buff);
 		memset(buff,0,MAX_BUFF);
 	}
-
+	clock_t end = clock();
+	*time = (end-begin); 
 	return total;
 }
 
-int read_mid(int src_fd , int nb_char , int pos){
+int read_mid(int src_fd , int nb_char , int pos , clock_t * time){
 	lseek(src_fd,pos,SEEK_SET);
 
 	char buff[nb_char+1];
 	memset(buff,0,nb_char+1);
-
+	clock_t begin = clock();
 	int ret = read(src_fd,buff,nb_char);
+	clock_t end = clock();
 	printf("%s\n",buff);
+
+	*time = end-begin;
 
 	return ret;
 }
 
-int read_empty(){
+int read_empty(clock_t * time){
 	int src_fd = open("/mnt/ouiche/readempty.txt" , O_TRUNC | O_CREAT |O_RDWR, 0666);
 	if(src_fd < 0){
 		return -1 ;
@@ -106,11 +113,12 @@ int read_empty(){
 
 	char buff[MAX_BUFF];
 	memset(buff , 0 , MAX_BUFF);
-
+	clock_t begin = clock();
 	int ret = 0;
 	ret = read(src_fd,buff,MAX_BUFF);
+	clock_t end = clock();
 	printf("%s\n",buff);
-
+	*time = end - begin ;
 	close(src_fd);
 	return ret ;
 }
@@ -124,15 +132,19 @@ void read_test(const char * src){
 	struct stat st;
 		fstat(src_fd, &st);
 
-	int be = read_start(src_fd , NBCHAR);
-	int mid = read_mid(src_fd, NBCHAR , st.st_size/2);
-	int emp = read_empty();
-	int all = read_all(src_fd);
+	clock_t bec = 0;
+	clock_t mic = 0;
+	clock_t empc = 0;
+	clock_t allc = 0;
+	int be = read_start(src_fd , NBCHAR,&bec);
+	int mid = read_mid(src_fd, NBCHAR , st.st_size/2,&mic);
+	int emp = read_empty(&empc);
+	int all = read_all(src_fd,&allc);
 
-	printf("\nRead au Debut: lecture: %d | attendu: %d \n",be,(int)( (NBCHAR>st.st_size)? st.st_size:NBCHAR ) );
-	printf("Read au Milieu: lecture: %d | attendu: %d \n",mid,(int)( (NBCHAR>st.st_size/2)? st.st_size/2:NBCHAR ) );
-	printf("Read vide: lecture: %d | attendu: %d \n",emp, 0 );
-	printf("Read entier: lecture: %d | attendu: %d \n",all, (int)st.st_size );
+	printf("\nRead au Debut: lecture: %d | attendu: %d | time %ld\n",be,(int)( (NBCHAR>st.st_size)? st.st_size:NBCHAR ) , bec);
+	printf("Read au Milieu: lecture: %d | attendu: %d | time %ld\n",mid,(int)( (NBCHAR>st.st_size/2)? st.st_size/2:NBCHAR ) , mic);
+	printf("Read vide: lecture: %d | attendu: %d | time %ld\n",emp, 0 , empc);
+	printf("Read entier: lecture: %d | attendu: %d | time %ld\n",all, (int)st.st_size , allc );
 
 	close(src_fd);
 }
@@ -149,13 +161,15 @@ int write_append(const char * src){
 	fstat(src_fd, &st);
 	int taille_avant= st.st_size;
 
+	clock_t begin = clock();
 	written = write(src_fd,WRI, SIZEWRI);
+	clock_t end = clock();
 
-		fstat(src_fd, &st);
+	fstat(src_fd, &st);
 
 	close(src_fd);
 
-	printf("Write append:  ecriture: %d | attendu: %d \n" , written , SIZEWRI);
+	printf("Write append:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin));
 	printf("Write append:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant + SIZEWRI);
 	return written;
 }
@@ -172,12 +186,14 @@ int write_new(const char * src){
 	fstat(src_fd, &st);
 	int taille_avant= st.st_size;
 
+	clock_t begin = clock();
 	written = write(src_fd,WRI, SIZEWRI);
+	clock_t end = clock();
 
 	fstat(src_fd, &st);
 
 	close(src_fd);
-	printf("Write new:  ecriture: %d | attendu: %d \n" , written , SIZEWRI);
+	printf("Write new:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin));
 	printf("Write new:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant + SIZEWRI);
 	return written;
 }
@@ -195,12 +211,14 @@ int write_start(const char * src){
 	fstat(src_fd, &st);
 	int taille_avant= st.st_size;
 
+	clock_t begin = clock();
 	written = write(src_fd,WRI, SIZEWRI);
+	clock_t end = clock();
 
 	fstat(src_fd, &st);
 
 	close(src_fd);
-	printf("Write start:  ecriture: %d | attendu: %d \n" , written , SIZEWRI);
+	printf("Write start:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin));
 	printf("Write start:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant);
 	return written;
 }
@@ -215,16 +233,18 @@ int write_mid(const char * src){
 	}
 
 	struct stat st;
-		fstat(src_fd, &st);
+	fstat(src_fd, &st);
 	int taille_avant= st.st_size;
 	lseek(src_fd,st.st_size/2,SEEK_SET);
 
+	clock_t begin = clock();
 	written = write(src_fd,WRI, SIZEWRI);
+	clock_t end = clock();
 
 	fstat(src_fd, &st);
 
 	close(src_fd);
-	printf("Write mid:  ecriture: %d | attendu: %d \n" , written , SIZEWRI);
+	printf("Write mid:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin));
 	printf("Write mid:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant);
 	return written;
 }
