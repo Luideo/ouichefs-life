@@ -403,6 +403,11 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t
  */
 static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
 	struct inode *inode = f->f_inode;
+	struct ouichefs_file_index_block *index;
+	struct ouichefs_inode_info *ci = OUICHEFS_INODE(inode);
+	struct super_block *sb = inode->i_sb;
+	struct buffer_head *bh_index;
+	
 	if(!inode) {
 		pr_info("ouiche_ioctl: inode is NULL\n");
 		return -ENOTTY;
@@ -410,7 +415,6 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd, unsigned l
 
 	switch (cmd) {
 		case USED_BLKS:
-			// u32 used_blocks = inode->i_blocks;
 			char used_blocks_char[64];
 			snprintf(used_blocks_char, 64, "%llu", inode->i_blocks);
 			if(copy_to_user((char *) arg, used_blocks_char, strlen(used_blocks_char))){
@@ -420,9 +424,61 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd, unsigned l
 			return 0;
 		case PART_FILLED_BLKS:
 		case INTERN_FRAG_WASTE:
+			char retval[64];
+			int part_filled_blocks = 0;
+			int intern_frag_waste = 0;
+
+			bh_index = sb_bread(sb, ci->index_block);
+
+			if (!bh_index)
+				return -EIO;
+
+			index = (struct ouichefs_file_index_block *)bh_index->b_data;
+
+			for (int i=0; i<inode->i_blocks-1; i++) {
+				// La taille du bloc correspond aux 12 premiers bits du numéro de bloc
+				int block_size = (index->blocks[i] >> 20);
+				if(block_size < OUICHEFS_BLOCK_SIZE){
+					intern_frag_waste += OUICHEFS_BLOCK_SIZE - block_size;
+					part_filled_blocks++;
+				}
+			}
+
+			brelse(bh_index);
+
+			if(cmd == INTERN_FRAG_WASTE){
+				snprintf(retval, 64, "%d", intern_frag_waste);
+				if(copy_to_user((char *) arg, retval, strlen(retval))){
+					pr_info("ouiche_ioctl: copy_to_user failed\n");
+					return -EFAULT;
+				}
+			} else {
+				snprintf(retval, 64, "%d", part_filled_blocks);
+				if(copy_to_user((char *) arg, retval, strlen(retval))){
+					pr_info("ouiche_ioctl: copy_to_user failed\n");
+					return -EFAULT;
+				}	
+			}
+
+			return 0;
 		case USED_BLKS_INFO:
-			pr_info("ouiche_ioctl: command not implemented yet\n");
-			return -ENOTTY;
+			bh_index = sb_bread(sb, ci->index_block);
+
+			if (!bh_index)
+				return -EIO;
+
+			index = (struct ouichefs_file_index_block *)bh_index->b_data;
+
+			for (int i=0; i<inode->i_blocks-1; i++) {
+				// La taille du bloc correspond aux 12 premiers bits du numéro de bloc
+				int block_size = (index->blocks[i] >> 20);
+				int block_number = (index->blocks[i] & 0x000FFFFF);
+				pr_info("Block %d: %d bytes\n", block_number, block_size);
+			}
+
+			brelse(bh_index);
+			
+			return 0;
 		default:		
 			pr_info("ouiche_ioctl: unknown command\n");
 			return -ENOTTY;

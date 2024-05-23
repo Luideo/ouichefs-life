@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
 	}
 
 	int fd = open(argv[2], O_RDWR);
-	
+
 	if(fd < 0) {
 		perror("open");
 		return 1;
@@ -46,9 +46,7 @@ int main(int argc, char **argv) {
 				perror("ioctl");
 			break;
 		case 'l':
-			if (ioctl(fd, USED_BLKS_INFO, NULL) == 0)
-				printf("List of used blocks:\n");
-			else
+			if (ioctl(fd, USED_BLKS_INFO, NULL) != 0)
 				perror("ioctl");
 			break;
 		default:
