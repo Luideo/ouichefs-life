@@ -16,8 +16,8 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	int fd = open(argv[2], O_RDONLY);
-
+	int fd = open(argv[2], O_RDWR);
+	
 	if(fd < 0) {
 		perror("open");
 		return 1;

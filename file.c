@@ -302,6 +302,7 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t
 
 	struct inode *inode = file->f_inode;
 	struct super_block *sb = inode->i_sb;
+	// struct ouichefs_sb_info *sbi = OUICHEFS_SB(file->f_inode->i_sb);
 	struct ouichefs_inode_info *ci = OUICHEFS_INODE(inode);
 	struct ouichefs_file_index_block *index;
 	struct buffer_head *bh_index, *bh;
@@ -310,23 +311,39 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t
 	sector_t iblock;
 	int bno;
 
-	if (file->f_flags & O_APPEND) {
+	if (file->f_flags & O_APPEND)
 		*pos = inode->i_size;
-	}
 
 	if (*pos >= OUICHEFS_MAX_FILESIZE)
 		return -EFBIG;
 
+	bh_index = sb_bread(sb, ci->index_block);
+	index = (struct ouichefs_file_index_block *)bh_index->b_data;
+	iblock = *pos / OUICHEFS_BLOCK_SIZE;
+
+	if (!bh_index)
+		return -EIO;
+
+	// Vérifier entre dernier bloc alloué et iblock si des blocs sont alloués, sinon les allouer
+	for(int i=0; i<iblock; i++){
+		if (index->blocks[i] == 0) {
+			// Allouer un nouveau bloc
+			bno = get_free_block(OUICHEFS_SB(sb));
+			if (!bno) {
+				brelse(bh_index);
+				return -ENOSPC;
+			}
+			inode->i_blocks++;
+			index->blocks[i] = bno;
+			mark_buffer_dirty(bh_index);
+			sync_dirty_buffer(bh_index);
+		}
+	}
+
 	while (len > 0) {
-		// Calculer le bloc logique où écrire
-		iblock = *pos / OUICHEFS_BLOCK_SIZE;
-
-		// Lire l'index du fichier
 		bh_index = sb_bread(sb, ci->index_block);
-		if (!bh_index)
-			return -EIO;
 		index = (struct ouichefs_file_index_block *)bh_index->b_data;
-
+		iblock = *pos / OUICHEFS_BLOCK_SIZE;
 		// Vérifier si le bloc est déjà alloué
 		if (index->blocks[iblock] == 0) {
 			// Allouer un nouveau bloc
@@ -335,6 +352,7 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t
 				brelse(bh_index);
 				return -ENOSPC;
 			}
+			inode->i_blocks++;
 			index->blocks[iblock] = bno;
 			mark_buffer_dirty(bh_index);
 			sync_dirty_buffer(bh_index);
@@ -384,12 +402,18 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t
  * ioctl
  */
 static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
+	struct inode *inode = f->f_inode;
+	if(!inode) {
+		pr_info("ouiche_ioctl: inode is NULL\n");
+		return -ENOTTY;
+	}
+
 	switch (cmd) {
 		case USED_BLKS:
-			u32 used_blocks = f->f_inode->i_blocks;
+			// u32 used_blocks = inode->i_blocks;
 			char used_blocks_char[64];
-			snprintf(used_blocks_char, 64, "%d", used_blocks);
-			if(copy_to_user((char *) arg, used_blocks_char, sizeof(used_blocks_char))){
+			snprintf(used_blocks_char, 64, "%llu", inode->i_blocks);
+			if(copy_to_user((char *) arg, used_blocks_char, strlen(used_blocks_char))){
 				pr_info("ouiche_ioctl: copy_to_user failed\n");
 				return -EFAULT;
 			}
