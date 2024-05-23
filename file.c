@@ -292,14 +292,9 @@ static ssize_t ouichefs_read(struct file *file, char __user *data, size_t len, l
  * Write function for the ouichefs filesystem. This function allows to write data without
  * the use of page cache.
  */
+/*
 static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t len, loff_t *pos)
 {
-	pr_info("write: au voir\n");
-
-	pr_info("pos: %lld\n", *pos);
-	pr_info("len: %zu\n", len);
-	pr_info("file->f_pos: %lld\n", file->f_pos);
-
 	struct inode *inode = file->f_inode;
 	struct super_block *sb = inode->i_sb;
 	// struct ouichefs_sb_info *sbi = OUICHEFS_SB(file->f_inode->i_sb);
@@ -377,6 +372,194 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t
 			brelse(bh_index);
 			return -EFAULT;
 		}
+
+		mark_buffer_dirty(bh);
+		sync_dirty_buffer(bh);
+		brelse(bh);
+		brelse(bh_index);
+
+		*pos += to_be_written;
+		data += to_be_written;
+		len -= to_be_written;
+		written += to_be_written;
+
+		// Mettre à jour la taille du fichier si nécessaire
+		if (*pos > inode->i_size) {
+			inode->i_size = *pos;
+			mark_inode_dirty(inode);
+		}
+	}
+
+	return written;
+}
+*/
+
+/*
+* Find the correct block to write in the file
+* Return the position in the block
+*/
+static inline loff_t ouichefs_find_block(struct inode *inode, loff_t * pos , sector_t * iblock, struct ouichefs_file_index_block *index)
+{
+	int total = 0;
+	int i = 0;
+	for(i=0; i<inode->i_blocks-1 ; i++){
+		int tmp = total;
+		int block_size = (index->blocks[i] >> 20);
+		total += block_size;
+		if(total > *pos){
+			*iblock = i;
+			return *pos - tmp;
+		}
+	}
+	//ecriture dans un nouveau bloc : ibloc = 0 et la position dns le bloc = 0
+	*iblock = 0;
+	return 0;
+}
+
+/*
+ * Inserts a block number into the index block of a file by adding it after iblock 
+ * and keeping all the following blocks.
+ */
+static void ouichefs_insert_block_to_index(struct ouichefs_file_index_block *index, sector_t iblock, sector_t new_block)
+{
+	// Décaler les blocs suivants
+	int i=iblock+1;
+	sector_t tmp = index->blocks[i];
+	index->blocks[i] = new_block;
+	while(index->blocks[i] != 0){
+		i++;
+		sector_t tmp2 = index->blocks[i];
+		index->blocks[i] = tmp;
+		tmp = tmp2;
+	}
+	index->blocks[i++] = tmp;
+
+	// Insérer le nouveau bloc
+	index->blocks[iblock] = new_block;
+}
+
+/*
+ * Write function for the ouichefs filesystem. This function allows to write data without
+ * the use of page cache. This write function is the one that inserts data.
+ */
+static ssize_t ouichefs_write_insert(struct file *file, const char __user *data, size_t len, loff_t *pos)
+{
+	struct inode *inode = file->f_inode;
+	struct super_block *sb = inode->i_sb;
+	// struct ouichefs_sb_info *sbi = OUICHEFS_SB(file->f_inode->i_sb);
+	struct ouichefs_inode_info *ci = OUICHEFS_INODE(inode);
+	struct ouichefs_file_index_block *index;
+	struct buffer_head *bh_index, *bh;
+	char *buffer;
+	size_t to_be_written, written = 0;
+	sector_t iblock;
+	int bno;
+
+	if (file->f_flags & O_APPEND)
+		*pos = inode->i_size;
+
+	if (*pos >= OUICHEFS_MAX_FILESIZE)
+		return -EFBIG;
+
+	bh_index = sb_bread(sb, ci->index_block);
+	index = (struct ouichefs_file_index_block *)bh_index->b_data;
+	iblock = *pos / OUICHEFS_BLOCK_SIZE;
+
+	if (!bh_index)
+		return -EIO;
+
+	//recuperer le bloc de donnees correspondant au pos
+	//pos relative au bon bloc de donnée 
+	loff_t pos_in_block = ouichefs_find_block(inode, pos, &iblock, index);
+
+	// Vérifier entre dernier bloc alloué et iblock si des blocs sont alloués, sinon les allouer
+	for(int i=0; i<iblock; i++){
+		if (index->blocks[i] == 0) {
+			// Allouer un nouveau bloc
+			bno = get_free_block(OUICHEFS_SB(sb));
+			if (!bno) {
+				brelse(bh_index);
+				return -ENOSPC;
+			}
+			inode->i_blocks++;
+			index->blocks[i] = bno;
+			mark_buffer_dirty(bh_index);
+			sync_dirty_buffer(bh_index);
+		}
+	}
+
+	while (len > 0) {
+		bh_index = sb_bread(sb, ci->index_block);
+		index = (struct ouichefs_file_index_block *)bh_index->b_data;
+
+		// Vérifier si le bloc est déjà alloué
+		if (index->blocks[iblock] == 0) {
+			// Allouer un nouveau bloc
+			bno = get_free_block(OUICHEFS_SB(sb));
+			if (!bno) {
+				brelse(bh_index);
+				return -ENOSPC;
+			}
+			inode->i_blocks++;
+			index->blocks[iblock] = bno;
+			mark_buffer_dirty(bh_index);
+			sync_dirty_buffer(bh_index);
+		} else {
+			bno = index->blocks[iblock];
+		}
+
+		// Lire ou initialiser le bloc de données
+		bno = (index->blocks[iblock] & 0x000FFFFF);
+		int size_block = (index->blocks[iblock] >> 20);
+		bh = sb_bread(sb, bno);
+		if (!bh) {
+			brelse(bh_index);
+			return -EIO;
+		}
+		buffer = bh->b_data;
+
+		// Calculer la quantité de données à écrire dans ce bloc
+		to_be_written = min(len, (size_t)(OUICHEFS_BLOCK_SIZE - (*pos % OUICHEFS_BLOCK_SIZE)));
+
+		if(pos_in_block < size_block){
+			//couper le block //allouer un nouveau bloc
+			sector_t bisno = get_free_block(OUICHEFS_SB(sb));
+			if (!bisno) {
+				brelse(bh_index);
+				return -ENOSPC;
+			}
+			inode->i_blocks++;
+			mark_buffer_dirty(bh_index);
+			sync_dirty_buffer(bh_index);
+
+			struct buffer_head *bh_bis = sb_bread(sb, bisno);
+			if (!bh_bis) {
+				brelse(bh_index);
+				return -EIO;
+			}
+			char *buffer_bis = buffer+pos_in_block;
+			bh_bis->b_data = buffer_bis;
+
+			mark_buffer_dirty(bh_bis);
+			sync_dirty_buffer(bh_bis);
+			brelse (bh_bis);
+
+			int size_bis = (size_block-pos_in_block) << 20;
+			bisno += size_bis;
+			memset(buffer+pos_in_block, 0, size_bis);
+			ouichefs_insert_block_to_index(index, iblock, bisno);
+
+		}
+		// Copier les données de l'utilisateur dans le bloc de données
+		if (copy_from_user(buffer + (pos_in_block), data, to_be_written)) {
+			brelse(bh);
+			brelse(bh_index);
+			return -EFAULT;
+		}
+		int size = pos_in_block+to_be_written;
+		bno += size;
+		// Mettre à jour la taille du fichier si nécessaire
+		index->blocks[iblock] = bno;
 
 		mark_buffer_dirty(bh);
 		sync_dirty_buffer(bh);
@@ -492,6 +675,6 @@ const struct file_operations ouichefs_file_ops = {
 	.read_iter = generic_file_read_iter,
 	.write_iter = generic_file_write_iter,
 	.read = ouichefs_read,
-	.write = ouichefs_write,
+	.write = ouichefs_write_insert,
 	.unlocked_ioctl = ouichefs_unlocked_ioctl
 };
