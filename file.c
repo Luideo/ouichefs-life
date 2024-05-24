@@ -245,7 +245,7 @@ static inline size_t ouichefs_file_size(struct inode *inode, struct ouichefs_fil
 * Find the correct block to write in the file
 * Return the position in the block
 */
-static inline loff_t ouichefs_find_block(struct inode *inode, loff_t * pos , sector_t * iblock, struct ouichefs_file_index_block *index)
+static inline loff_t ouichefs_find_block(struct inode *inode, loff_t * pos , sector_t * iblock, struct ouichefs_file_index_block *index, int write_mode)
 {
 	int total = 0;
 	int i = 0;
@@ -253,7 +253,8 @@ static inline loff_t ouichefs_find_block(struct inode *inode, loff_t * pos , sec
 		int tmp = total;
 		int block_size = (index->blocks[i] >> 20);
 		total += block_size;
-		if(total >= *pos){
+		pr_info("i=%d, total=%d\n", i, total);
+		if((write_mode && total >= *pos) || ((!write_mode && total > *pos))){
 			*iblock = i;
 			return *pos - tmp;
 		}
@@ -332,7 +333,7 @@ static inline loff_t ouichefs_find_block(struct inode *inode, loff_t * pos , sec
  * the use of page cache. This read function is the one that reads data written with
  * ouichefs_write_insert function.
  */
-static ssize_t ouichefs_read_insert(struct file *file, char __user *data, size_t len, loff_t *pos)
+static ssize_t ouichefs_read_insert(struct file *file, char __u(!write_mode && total > *pos) ser *data, size_t len, loff_t *pos)
 {
 	if (*pos >= file->f_inode->i_size)
 		return 0;
@@ -352,7 +353,10 @@ static ssize_t ouichefs_read_insert(struct file *file, char __user *data, size_t
 		return -EIO;
 	index = (struct ouichefs_file_index_block *)bh_index->b_data;
 
-	ouichefs_find_block(file->f_inode, pos, &iblock, index);
+	pr_info("len=%lu\n", len);
+	loff_t pos_in_block = ouichefs_find_block(file->f_inode, pos, &iblock, index, 0);
+
+	pr_info("pos=%llu, iblock=%llu, pos_in_block=%llu\n", *pos, iblock, pos_in_block);
 
 	/* If block number exceeds filesize, fail */
 	if (iblock >= OUICHEFS_BLOCK_SIZE >> 2)
@@ -363,7 +367,9 @@ static ssize_t ouichefs_read_insert(struct file *file, char __user *data, size_t
 	int size_block = (bno >> 20);
 	int block_number = (bno & 0x000FFFFF);
 
-	if (bno == 0) {
+	pr_info("block_number=%d\n", block_number);
+
+	if (bno == 0){
 		brelse(bh_index);
 		return -EIO;
 	}
@@ -371,6 +377,7 @@ static ssize_t ouichefs_read_insert(struct file *file, char __user *data, size_t
 	struct buffer_head *bh = sb_bread(sb, block_number);
 
 	if (!bh) {
+		pr_info("ouichefs_read_insert: block not read\n");
 		brelse(bh_index);
 		return -EIO;
 	}
@@ -378,10 +385,10 @@ static ssize_t ouichefs_read_insert(struct file *file, char __user *data, size_t
 	char *buffer = bh->b_data;
 
 	// get data from the buffer from the current position
-	buffer += *pos % OUICHEFS_BLOCK_SIZE;
+	buffer += pos_in_block;
 
-	if (size_block < len)
-		to_be_copied = size_block;
+	if (size_block-pos_in_block < len)
+		to_be_copied = size_block-pos_in_block;
 	else
 		to_be_copied = len;
 
@@ -562,7 +569,7 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 
 	//recuperer le bloc de donnees correspondant au pos
 	//pos relative au bon bloc de donnée 
-	loff_t pos_in_block = ouichefs_find_block(inode, pos, &iblock, index);
+	loff_t pos_in_block = ouichefs_find_block(inode, pos, &iblock, index, 1);
 
 	pr_info("ouichefs_write_insert: CHECKPOINT 3 with pos_in_block=%llu\n", pos_in_block);
 
@@ -589,7 +596,7 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 		pr_info("ouichefs_write_insert: CHECKPOINT 6 while with len=%lu\n", len);
 		bh_index = sb_bread(sb, ci->index_block);
 		index = (struct ouichefs_file_index_block *)bh_index->b_data;
-		pos_in_block = ouichefs_find_block(inode, pos, &iblock, index);
+		pos_in_block = ouichefs_find_block(inode, pos, &iblock, index, 1);
 		pr_info("ouichefs_write_insert: CHECKPOINT 7 with pos_in_block=%llu\n", pos_in_block);
 
 		// Vérifier si le bloc n'est pas déjà alloué
@@ -636,7 +643,7 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 				return -ENOSPC;
 			}
 			inode->i_blocks++;
-	pr_info("ouichefs_write_insert: CHECKPOINT 1\n");
+			pr_info("ouichefs_write_insert: CHECKPOINT 1\n");
 			mark_buffer_dirty(bh_index);
 			sync_dirty_buffer(bh_index);
 
@@ -708,6 +715,8 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 
 		mark_buffer_dirty(bh);
 		sync_dirty_buffer(bh);
+		mark_buffer_dirty(bh_index);
+		sync_dirty_buffer(bh_index);
 		brelse(bh);
 		brelse(bh_index);
 
@@ -728,8 +737,9 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 		}
 	}
 
-	inode->i_size = ouichefs_file_size(inode, index);
 
+	inode->i_size = ouichefs_file_size(inode, index);
+	mark_inode_dirty(inode);
 	pr_info("ouichefs_write_insert: CHECKPOINT 29 with written=%lu\n", written);
 
 	return written;
@@ -818,6 +828,8 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd, unsigned l
 				int block_size = (index->blocks[i] >> 20);
 				int block_number = (index->blocks[i] & 0x000FFFFF);
 				pr_info("Block %d: %d bytes\n", block_number, block_size);
+				struct buffer_head *bh = sb_bread(sb, block_number);
+				pr_info("Block %d: %s\n", block_number, bh->b_data);
 			}
 
 			brelse(bh_index);

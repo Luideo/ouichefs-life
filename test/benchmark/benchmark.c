@@ -38,7 +38,8 @@ void duplication_test(const char * src_path, const char *dest_path, int testing)
 	memset(buf2,0,MAX_BUFF);
 	int k ;
 	while( (k = read(src_fd,buf2,MAX_BUFF)) > 0){
-	totalread+=k;
+		printf("loop buf: %s\n",buf2);
+		totalread+=k;
 		totalwritten += write(dest_fd, buf2, k);
 		memset(buf2,0,MAX_BUFF);
 	}
@@ -85,6 +86,7 @@ int read_all(int src_fd , clock_t * time){
 		printf("%s",buff);
 		memset(buff,0,MAX_BUFF);
 	}
+	printf("\n");
 	clock_t end = clock();
 	*time = (end-begin); 
 	return total;
