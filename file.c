@@ -225,6 +225,23 @@ static int ouichefs_open(struct inode *inode, struct file *file)
 }
 
 /*
+ * Returnds the size of a file by browsing all its blocks
+ */
+static inline size_t ouichefs_file_size(struct inode *inode, struct ouichefs_file_index_block *index)
+{
+	size_t size = 0;
+	int i;
+
+	for (i = 0; i < inode->i_blocks - 1; i++) {
+		if (index->blocks[i] == 0)
+			break;
+		size += (index->blocks[i] >> 20);
+	}
+
+	return size;
+}
+
+/*
 * Find the correct block to write in the file
 * Return the position in the block
 */
@@ -236,7 +253,7 @@ static inline loff_t ouichefs_find_block(struct inode *inode, loff_t * pos , sec
 		int tmp = total;
 		int block_size = (index->blocks[i] >> 20);
 		total += block_size;
-		if(total > *pos){
+		if(total >= *pos){
 			*iblock = i;
 			return *pos - tmp;
 		}
@@ -514,6 +531,7 @@ static void ouichefs_insert_block_to_index(struct ouichefs_file_index_block *ind
 
 static ssize_t ouichefs_write_insert(struct file *file, const char __user *data, size_t len, loff_t *pos)
 {
+	pr_info("ouichefs_write_insert: CHECKPOINT FIRST\n");
 	struct inode *inode = file->f_inode;
 	struct super_block *sb = inode->i_sb;
 	struct ouichefs_inode_info *ci = OUICHEFS_INODE(inode);
@@ -523,6 +541,8 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 	size_t to_be_written, written = 0;
 	sector_t iblock;
 	int bno;
+	
+	pr_info("ouichefs_write_insert: CHECKPOINT 0\n");
 
 	if (file->f_flags & O_APPEND)
 		*pos = inode->i_size;
@@ -530,9 +550,12 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 	if (*pos >= OUICHEFS_MAX_FILESIZE)
 		return -EFBIG;
 
+	pr_info("ouichefs_write_insert: CHECKPOINT 1\n");
 	bh_index = sb_bread(sb, ci->index_block);
 	index = (struct ouichefs_file_index_block *)bh_index->b_data;
 	//iblock = *pos / OUICHEFS_BLOCK_SIZE;
+
+	pr_info("ouichefs_write_insert: CHECKPOINT 2 with pos=%llu\n", *pos);
 
 	if (!bh_index)
 		return -EIO;
@@ -541,9 +564,13 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 	//pos relative au bon bloc de donnée 
 	loff_t pos_in_block = ouichefs_find_block(inode, pos, &iblock, index);
 
+	pr_info("ouichefs_write_insert: CHECKPOINT 3 with pos_in_block=%llu\n", pos_in_block);
+
 	// Vérifier entre dernier bloc alloué et iblock si des blocs sont alloués, sinon les allouer
 	for(int i=0; i<iblock; i++){
+		pr_info("ouichefs_write_insert: CHECKPOINT 4 loop i=%d iblock=%llu\n", i, iblock);
 		if (index->blocks[i] == 0) {
+			pr_info("ouichefs_write_insert: CHECKPOINT 5\n");
 			// Allouer un nouveau bloc
 			bno = get_free_block(OUICHEFS_SB(sb));
 			if (!bno) {
@@ -559,12 +586,15 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 	}
 
 	while (len > 0) {
+		pr_info("ouichefs_write_insert: CHECKPOINT 6 while with len=%lu\n", len);
 		bh_index = sb_bread(sb, ci->index_block);
 		index = (struct ouichefs_file_index_block *)bh_index->b_data;
 		pos_in_block = ouichefs_find_block(inode, pos, &iblock, index);
+		pr_info("ouichefs_write_insert: CHECKPOINT 7 with pos_in_block=%llu\n", pos_in_block);
 
 		// Vérifier si le bloc n'est pas déjà alloué
 		if (index->blocks[iblock] == 0) {
+			pr_info("ouichefs_write_insert: CHECKPOINT 8\n");
 			// Allouer un nouveau bloc
 			bno = get_free_block(OUICHEFS_SB(sb));
 			if (!bno) {
@@ -576,12 +606,16 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 			mark_buffer_dirty(bh_index);
 			sync_dirty_buffer(bh_index);
 		} else {
+			pr_info("ouichefs_write_insert: CHECKPOINT 9\n");
 			bno = index->blocks[iblock];
 		}
 
+		pr_info("ouichefs_write_insert: CHECKPOINT 10\n");
 		// Lire ou initialiser le bloc de données
 		bno = (index->blocks[iblock] & 0x000FFFFF);
 		int size_block = (index->blocks[iblock] >> 20);
+
+		pr_info("ouichefs_write_insert: CHECKPOINT 11 with bno=%d ans size_block=%d\n", bno, size_block);
 
 		bh = sb_bread(sb, bno);
 		if (!bh) {
@@ -590,8 +624,11 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 		}
 		buffer = bh->b_data;
 
+		pr_info("ouichefs_write_insert: CHECKPOINT 12\n");
+
 		//cas 2 : 
 		if(pos_in_block < size_block ){
+			pr_info("ouichefs_write_insert: CHECKPOINT 13 with pos_in_block=%llu and size_block=%d\n", pos_in_block, size_block);
 			//allouer un nouveau bloc
 			sector_t bisno = get_free_block(OUICHEFS_SB(sb));
 			if (!bisno) {
@@ -599,8 +636,11 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 				return -ENOSPC;
 			}
 			inode->i_blocks++;
+	pr_info("ouichefs_write_insert: CHECKPOINT 1\n");
 			mark_buffer_dirty(bh_index);
 			sync_dirty_buffer(bh_index);
+
+			pr_info("ouichefs_write_insert: CHECKPOINT 14 with bisno=%llu\n", bisno);
 
 			struct buffer_head *bh_bis = sb_bread(sb, bisno);
 			if (!bh_bis) {
@@ -608,30 +648,41 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 				return -EIO;
 			}
 			
+			pr_info("ouichefs_write_insert: CHECKPOINT 15\n");
 
 			int size_bis = (size_block-pos_in_block) ;
 			bisno += (size_bis << 20);
 
+			pr_info("ouichefs_write_insert: CHECKPOINT 16 with size_bis=%d and bisno=%llu\n", size_bis, bisno);
+
 			memcpy(bh_bis->b_data,(buffer+pos_in_block),size_bis );
+
+			pr_info("ouichefs_write_insert: CHECKPOINT 17\n");
 
 			mark_buffer_dirty(bh_bis);
 			sync_dirty_buffer(bh_bis);
 			brelse (bh_bis);
 
+			pr_info("ouichefs_write_insert: CHECKPOINT 18\n");
 			
 			memset(buffer+pos_in_block, 0, size_bis);
 			ouichefs_insert_block_to_index(index, iblock, bisno);
 			size_block = pos_in_block;
 
+			pr_info("ouichefs_write_insert: CHECKPOINT 19\n");
 		}
 		
 		//cas 3 //ajout dans le bloc avec un gap
 		if(pos_in_block > size_block && pos_in_block ){
+			pr_info("ouichefs_write_insert: CHECKPOINT 20\n");
+
 			memset(buffer+size_block ,0, pos_in_block-size_block );
 			size_block = pos_in_block;
 
 			inode-> i_size += pos_in_block-size_block;
 			mark_inode_dirty(inode);
+
+			pr_info("ouichefs_write_insert: CHECKPOINT 21\n");
 		}
 
 
@@ -640,37 +691,46 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 		//to_be_written = min(len, (size_t)(OUICHEFS_BLOCK_SIZE - (*pos % OUICHEFS_BLOCK_SIZE)));
 		to_be_written = min(len , (size_t)(OUICHEFS_BLOCK_SIZE - size_block));
 
+		pr_info("ouichefs_write_insert: CHECKPOINT 22 with to_be_written=%lu\n", to_be_written);
+
 		// Copier les données de l'utilisateur dans le bloc de données
 		if (copy_from_user(buffer + (pos_in_block), data, to_be_written)) {
 			brelse(bh);
 			brelse(bh_index);
 			return -EFAULT;
 		}
+		pr_info("ouichefs_write_insert: CHECKPOINT 23\n");
 		int size = (pos_in_block+to_be_written) << 20;
 		bno += size;
 		index->blocks[iblock] = bno;
+
+		pr_info("ouichefs_write_insert: CHECKPOINT 24 with size=%d, bno=%d, bno-size=%d\n", size, bno, bno-size);
 
 		mark_buffer_dirty(bh);
 		sync_dirty_buffer(bh);
 		brelse(bh);
 		brelse(bh_index);
 
+		pr_info("ouichefs_write_insert: CHECKPOINT 25\n");
+
 		*pos += to_be_written;
 		data += to_be_written;
 		len -= to_be_written;
 		written += to_be_written;
 
+		pr_info("ouichefs_write_insert: CHECKPOINT 26 with pos=%llu, len=%lu, written=%lu\n", *pos, len, written);
+
 		// Mettre à jour la taille du fichier si nécessaire
 		if (*pos > inode->i_size) {
+			pr_info("ouichefs_write_insert: CHECKPOINT 27\n");
 			inode->i_size = *pos;
 			mark_inode_dirty(inode);
 		}
 	}
 
-	if( inode->i_size != *pos){
-		inode-> i_size += written;
-		mark_inode_dirty(inode);
-	}
+	inode->i_size = ouichefs_file_size(inode, index);
+
+	pr_info("ouichefs_write_insert: CHECKPOINT 29 with written=%lu\n", written);
 
 	return written;
 }

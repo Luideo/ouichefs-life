@@ -6,7 +6,7 @@
 #include "ouicheioctl.h"
 
 int main(int argc, char **argv) {
-	if(argc != 3 || argv[1][0] != '-' || (argv[1][1] != 'u' && argv[1][1] != 'p' && argv[1][1] != 'i' && argv[1][1] != 'l')) {
+	if(argc != 3 || argv[1][0] != '-' || (argv[1][1] != 'u' && argv[1][1] != 'p' && argv[1][1] != 'i' && argv[1][1] != 'l' && argv[1][1] != 'd')) {
 		printf("Usage: %s <option> <file>\n", argv[0]);
 		printf("Options:\n");
 		printf("\t-u : used blocks\n");
