@@ -333,7 +333,7 @@ static inline loff_t ouichefs_find_block(struct inode *inode, loff_t * pos , sec
  * the use of page cache. This read function is the one that reads data written with
  * ouichefs_write_insert function.
  */
-static ssize_t ouichefs_read_insert(struct file *file, char __u(!write_mode && total > *pos) ser *data, size_t len, loff_t *pos)
+static ssize_t ouichefs_read_insert(struct file *file, char __user *data, size_t len, loff_t *pos)
 {
 	if (*pos >= file->f_inode->i_size)
 		return 0;
