@@ -21,3 +21,8 @@
  * USED_BLKS_INFO: returns the list of all used blocks with their number and effective size
  */
 #define USED_BLKS_INFO		_IOR(IO_MAGIC, 3, char *)
+
+/*
+ * DEFRAG: defragment the file
+ */
+#define DEFRAG			_IO(IO_MAGIC, 4)

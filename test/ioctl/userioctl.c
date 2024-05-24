@@ -13,6 +13,7 @@ int main(int argc, char **argv) {
 		printf("\t-p : partially filled blocks\n");
 		printf("\t-i : internal fragmentation\n");
 		printf("\t-l : list of used blocks\n");
+		printf("\t-d : defragment the file\n");
 		return 1;
 	}
 
@@ -49,10 +50,16 @@ int main(int argc, char **argv) {
 			if (ioctl(fd, USED_BLKS_INFO, NULL) != 0)
 				perror("ioctl");
 			break;
+		case 'd':
+			if(ioctl(fd, DEFRAG) != 0)
+				perror("ioctl");
+			break;
 		default:
 			printf("Invalid option\n");
 			break;
 	}
+
+	close(fd);
 
 	return 0;
 }
