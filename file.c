@@ -261,72 +261,73 @@ static inline loff_t ouichefs_find_block(struct inode *inode, loff_t * pos , sec
 	}
 	//ecriture dans un nouveau bloc : ibloc = 0 et la position dns le bloc = 0
 	int pos_in_bloc = (*pos - total)%OUICHEFS_BLOCK_SIZE;
-	*iblock = i+((*pos-total)/OUICHEFS_BLOCK_SIZE);
+	int div = (*pos - total) / OUICHEFS_BLOCK_SIZE;
+	*iblock = i + div;
 	return pos_in_bloc;
 }
 /*
  * Read function for the ouichefs filesystem. This function allows to read data without
  * the use of page cache.
  */
-// static ssize_t ouichefs_read(struct file *file, char __user *data, size_t len, loff_t *pos)
-// {
-// 	if (*pos >= file->f_inode->i_size)
-// 		return 0;
+static ssize_t ouichefs_read(struct file *file, char __user *data, size_t len, loff_t *pos)
+{
+	if (*pos >= file->f_inode->i_size)
+		return 0;
 
-// 	unsigned long to_be_copied = 0;
-// 	unsigned long copied_to_user = 0;
+	unsigned long to_be_copied = 0;
+	unsigned long copied_to_user = 0;
 
-// 	struct super_block *sb = file->f_inode->i_sb;
-// 	sector_t iblock = *pos / OUICHEFS_BLOCK_SIZE;
-// 	struct ouichefs_file_index_block *index;
-// 	struct buffer_head *bh_index;
-// 	struct ouichefs_inode_info *ci = OUICHEFS_INODE(file->f_inode);
+	struct super_block *sb = file->f_inode->i_sb;
+	sector_t iblock = *pos / OUICHEFS_BLOCK_SIZE;
+	struct ouichefs_file_index_block *index;
+	struct buffer_head *bh_index;
+	struct ouichefs_inode_info *ci = OUICHEFS_INODE(file->f_inode);
 
-// 	/* If block number exceeds filesize, fail */
-// 	if (iblock >= OUICHEFS_BLOCK_SIZE >> 2)
-// 		return -EFBIG;
+	/* If block number exceeds filesize, fail */
+	if (iblock >= OUICHEFS_BLOCK_SIZE >> 2)
+		return -EFBIG;
 
-// 	/* Read index block from disk */
-// 	bh_index = sb_bread(sb, ci->index_block);
-// 	if (!bh_index)
-// 		return -EIO;
-// 	index = (struct ouichefs_file_index_block *)bh_index->b_data;
+	/* Read index block from disk */
+	bh_index = sb_bread(sb, ci->index_block);
+	if (!bh_index)
+		return -EIO;
+	index = (struct ouichefs_file_index_block *)bh_index->b_data;
 
-// 	/* Get the block number for the current iblock */
-// 	int bno = index->blocks[iblock];
+	/* Get the block number for the current iblock */
+	int bno = index->blocks[iblock];
 
-// 	if (bno == 0) {
-// 		brelse(bh_index);
-// 		return -EIO;
-// 	}
+	if (bno == 0) {
+		brelse(bh_index);
+		return -EIO;
+	}
 
-// 	struct buffer_head *bh = sb_bread(sb, bno);
+	struct buffer_head *bh = sb_bread(sb, bno);
 
-// 	if (!bh) {
-// 		brelse(bh_index);
-// 		return -EIO;
-// 	}
+	if (!bh) {
+		brelse(bh_index);
+		return -EIO;
+	}
 
-// 	char *buffer = bh->b_data;
+	char *buffer = bh->b_data;
 
-// 	// get data from the buffer from the current position
-// 	buffer += *pos % OUICHEFS_BLOCK_SIZE;
+	// get data from the buffer from the current position
+	buffer += *pos % OUICHEFS_BLOCK_SIZE;
 
-// 	if (bh->b_size < len)
-// 		to_be_copied = bh->b_size;
-// 	else
-// 		to_be_copied = len;
+	if (bh->b_size < len)
+		to_be_copied = bh->b_size;
+	else
+		to_be_copied = len;
 
-// 	copied_to_user = to_be_copied - copy_to_user(data, buffer, to_be_copied);
+	copied_to_user = to_be_copied - copy_to_user(data, buffer, to_be_copied);
 
-// 	*pos += copied_to_user;
-// 	file->f_pos = *pos;
+	*pos += copied_to_user;
+	file->f_pos = *pos;
 
-// 	brelse(bh);
-// 	brelse(bh_index);
+	brelse(bh);
+	brelse(bh_index);
 
-// 	return copied_to_user;
-// }
+	return copied_to_user;
+}
 
 /*
  * Read function for the ouichefs filesystem. This function allows to read data without
@@ -407,7 +408,6 @@ static ssize_t ouichefs_read_insert(struct file *file, char __user *data, size_t
  * Write function for the ouichefs filesystem. This function allows to write data without
  * the use of page cache.
  */
-/*
 static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t len, loff_t *pos)
 {
 	struct inode *inode = file->f_inode;
@@ -507,7 +507,6 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data, size_t
 
 	return written;
 }
-*/
 
 
 /*
@@ -785,6 +784,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd, unsigned l
 	struct ouichefs_inode_info *ci = OUICHEFS_INODE(inode);
 	struct super_block *sb = inode->i_sb;
 	struct buffer_head *bh_index;
+	struct file_operations *fops = (struct file_operations *) f->f_inode->i_fop;
 	int part_filled_blocks = 0;
 	int intern_frag_waste = 0;
 	
@@ -928,13 +928,46 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd, unsigned l
 			brelse(bh_index);
 
 			return 0;
+		case SWITCH_MODE:
+			if(!f->f_inode->i_fop)
+				return -ENOTTY;
+
+			if(f->f_inode->i_fop->read == ouichefs_read_insert) {
+				pr_info("Switching to normal read/write.\n");
+				fops->read = ouichefs_read;
+				fops->write = ouichefs_write;
+			} else {
+				pr_info("Switching to insert read/write.\n");
+				fops->read = ouichefs_read_insert;
+				fops->write = ouichefs_write_insert;
+			}
+
+			return 0;
+		case DISPLAY_MODE:
+			char mode[7];
+
+			if(!fops)
+				return -ENOTTY;
+
+			if(fops->read == ouichefs_read_insert) {
+				snprintf(mode, 7, "insert");
+			} else {
+				snprintf(mode, 7, "normal");
+			}
+
+			if(copy_to_user((char *) arg, mode, strlen(mode))){
+				pr_info("ouiche_ioctl: copy_to_user failed\n");
+				return -EFAULT;
+			}
+
+			return 0;
 		default:		
 			pr_info("ouiche_ioctl: unknown command\n");
 			return -ENOTTY;
 	}
 }
 
-const struct file_operations ouichefs_file_ops = {
+struct file_operations ouichefs_file_ops = {
 	.owner = THIS_MODULE,
 	.open = ouichefs_open,
 	.llseek = generic_file_llseek,

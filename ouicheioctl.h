@@ -26,3 +26,13 @@
  * DEFRAG: defragment the file
  */
 #define DEFRAG			_IO(IO_MAGIC, 4)
+
+/*
+ * SWITCH_MODE: switch the read/write mode from normal to insert and vice versa
+ */
+#define SWITCH_MODE		_IO(IO_MAGIC, 5)
+
+/*
+ * DISPLAY_MODE: diplay the current read/write mode
+ */
+#define DISPLAY_MODE		_IO(IO_MAGIC, 6)
