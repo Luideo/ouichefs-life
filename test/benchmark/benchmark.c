@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <string.h>
+#include <ctype.h>
 
 #define BEGIN 	0
 #define END	1
@@ -14,11 +15,44 @@
 #define MAX_BUFF 256
 #define NBCHAR 10
 #define WRI "TEST WRITE"
-#define SIZEWRI 11
-
+#define SIZEWRI 10
+#define SIZEOW 10
+#define OFFSET 11
 /*
 * Duplique le fichier src_path vers dest_path
 */
+
+void print_comp(const char * src , size_t size )
+{	
+	char buuf[size*2+1];
+	memset(buuf,0,size*2+1);
+	int count = 0;
+	for (int i = 0 ; i < size ; i++){
+		if(isprint(src[i])){
+			buuf[count] = src[i];
+			count++;
+		}else{
+			switch (src[i])
+			{
+			case '\n':
+				buuf[count] = '/';
+				buuf[count+1] = 'n';
+				count += 2 ;
+				break;
+			case '\0':
+				buuf[count] = '/';
+				buuf[count+1] = '0';
+				count += 2 ;
+				break;
+			default:
+				buuf[count] = '?';
+				count++;
+				break;
+			}
+		}
+	}
+	printf("%s\n" , buuf);
+}
 
 void duplication_test(const char * src_path, const char *dest_path, int testing) {
 
@@ -38,16 +72,17 @@ void duplication_test(const char * src_path, const char *dest_path, int testing)
 	memset(buf2,0,MAX_BUFF);
 	int k ;
 	while( (k = read(src_fd,buf2,MAX_BUFF)) > 0){
-		printf("loop buf: %s\n",buf2);
+		//printf("loop buf: %s\n",buf2);
+		print_comp(buf2 , k);
 		totalread+=k;
 		totalwritten += write(dest_fd, buf2, k);
 		memset(buf2,0,MAX_BUFF);
 	}
-
+	printf("\n");
 	clock_t end = clock();
 	close(dest_fd);
 	if(testing)
-		printf("duplication test: temps:%ld | lecture: %d | Ecriture: %d\n", (end-begin), totalread, totalwritten);
+		printf("duplication test: temps:%ld | lecture: %d | Ecriture: %d\n", (end-begin)/ CLOCKS_PER_SEC, totalread, totalwritten);
 }
 
 /*
@@ -65,7 +100,8 @@ int read_start(int src_fd , int nb_char , clock_t * time){
 	clock_t end = clock();
 	*time = (end-begin);
 	char * tmp = buff;
-	printf("%s\n",tmp);
+	print_comp(buff , ret);
+	printf("\n");
 
 	return ret;
 }
@@ -83,7 +119,7 @@ int read_all(int src_fd , clock_t * time){
 	clock_t begin = clock();
 	while((r = read(src_fd,buff,MAX_BUFF-1)) > 0  ){
 		total+=r;
-		printf("%s",buff);
+		print_comp(buff , r);
 		memset(buff,0,MAX_BUFF);
 	}
 	printf("\n");
@@ -100,7 +136,8 @@ int read_mid(int src_fd , int nb_char , int pos , clock_t * time){
 	clock_t begin = clock();
 	int ret = read(src_fd,buff,nb_char);
 	clock_t end = clock();
-	printf("%s\n",buff);
+	print_comp(buff , ret);
+	printf("\n");
 
 	*time = end-begin;
 
@@ -119,7 +156,10 @@ int read_empty(clock_t * time){
 	int ret = 0;
 	ret = read(src_fd,buff,MAX_BUFF);
 	clock_t end = clock();
-	printf("%s\n",buff);
+	
+	print_comp(buff , ret);
+	printf("\n");
+
 	*time = end - begin ;
 	close(src_fd);
 	return ret ;
@@ -143,10 +183,10 @@ void read_test(const char * src){
 	int emp = read_empty(&empc);
 	int all = read_all(src_fd,&allc);
 
-	printf("\nRead au Debut: lecture: %d | attendu: %d | time %ld\n",be,(int)( (NBCHAR>st.st_size)? st.st_size:NBCHAR ) , bec);
-	printf("Read au Milieu: lecture: %d | attendu: %d | time %ld\n",mid,(int)( (NBCHAR>st.st_size/2)? st.st_size/2:NBCHAR ) , mic);
-	printf("Read vide: lecture: %d | attendu: %d | time %ld\n",emp, 0 , empc);
-	printf("Read entier: lecture: %d | attendu: %d | time %ld\n",all, (int)st.st_size , allc );
+	printf("\nRead au Debut: lecture: %d | attendu: %d | time %ld\n",be,(int)( (NBCHAR>st.st_size)? st.st_size:NBCHAR ) , bec/ CLOCKS_PER_SEC);
+	printf("Read au Milieu: lecture: %d | attendu: %d | time %ld\n",mid,(int)( (NBCHAR>st.st_size/2)? st.st_size/2:NBCHAR ) , mic/ CLOCKS_PER_SEC);
+	printf("Read vide: lecture: %d | attendu: %d | time %ld\n",emp, 0 , empc/ CLOCKS_PER_SEC);
+	printf("Read entier: lecture: %d | attendu: %d | time %ld\n",all, (int)st.st_size , allc / CLOCKS_PER_SEC);
 
 	close(src_fd);
 }
@@ -171,7 +211,7 @@ int write_append(const char * src){
 
 	close(src_fd);
 
-	printf("Write append:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin));
+	printf("Write append:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_SEC);
 	printf("Write append:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant + SIZEWRI);
 	return written;
 }
@@ -195,7 +235,7 @@ int write_new(const char * src){
 	fstat(src_fd, &st);
 
 	close(src_fd);
-	printf("Write new:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin));
+	printf("Write new:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_SEC);
 	printf("Write new:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant + SIZEWRI);
 	return written;
 }
@@ -220,8 +260,8 @@ int write_start(const char * src){
 	fstat(src_fd, &st);
 
 	close(src_fd);
-	printf("Write start:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin));
-	printf("Write start:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant);
+	printf("Write start:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_SEC);
+	printf("Write start:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant + SIZEOW);
 	return written;
 }
 
@@ -246,9 +286,47 @@ int write_mid(const char * src){
 	fstat(src_fd, &st);
 
 	close(src_fd);
-	printf("Write mid:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin));
-	printf("Write mid:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant);
+	printf("Write mid:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_SEC);
+	printf("Write mid:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant + SIZEOW);
 	return written;
+}
+
+int write_offset_fromTheEnd(const char * src , size_t offset){
+	int written = 0 ;
+	int src_fd = open(src, O_CREAT | O_WRONLY , 0666);
+
+	if(src_fd < 0){
+		fprintf(stdout, "Fichier non_existant\n");
+		return -1;
+	}
+	struct stat st;
+	fstat(src_fd, &st);
+	int taille_avant= st.st_size;
+	lseek(src_fd,offset,SEEK_END);
+
+	clock_t begin = clock();
+	written = write(src_fd,WRI, SIZEWRI);
+	clock_t end = clock();
+	
+	fstat(src_fd , &st);
+
+	close(src_fd);
+	printf("Write off:  ecriture: %d | attendu: %d | time: %ld\n" , written , (int)(SIZEWRI+offset) , (end-begin)/ CLOCKS_PER_SEC);
+	printf("Write off:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , (int)(taille_avant + SIZEWRI + offset));
+	return written;
+}
+
+void write_test(){
+	printf("======== test append dans /mnt/ouiche/appendwritetest.txt\n");
+	write_append("/mnt/ouiche/appendwritetest.txt");
+	printf("======== test start dans /mnt/ouiche/startwritetest.txt\n");
+	write_start("/mnt/ouiche/startwritetest.txt");
+	printf("======== test mid dans /mnt/ouiche/midwritetest.txt\n");
+	write_mid("/mnt/ouiche/midwritetest.txt");
+	printf("======== test new dans /mnt/ouiche/newwritetest.txt\n");
+	write_new("/mnt/ouiche/newwritetest.txt");
+	printf("======== test offset dans /mnt/ouiche/offsetwritetest.txt\n");
+	write_offset_fromTheEnd("/mnt/ouiche/offsetwritetest.txt" , OFFSET);
 }
 
 int toParam(const char * param){
@@ -274,6 +352,14 @@ int toParam(const char * param){
 		return 6;
 	}
 
+	if(strcmp("-wo" , param) == 0){
+		return 7 ;
+	}
+
+	if(strcmp("-wall" , param) == 0){
+		return 8;
+	}
+
 	return 0;
 }
 
@@ -282,6 +368,7 @@ int main(int  argc , char ** argv) {
 	if(argc < 2) {
 		fprintf(stdout, "Usage: benchmark <option> <path_to_source_file>\n");
 		fprintf(stdout, "-d : duplication\n-r :read\n-w :write append\n-ws :write at the start\n-wm :write in the middle\n-wa :write in a new\n");
+		fprintf(stdout, "-wo :write with an offset\n-wall :all of the write tests");
 		fprintf(stdout, "attention pour les writes les fichiers risquent d'être détruits\n");
 		return EXIT_FAILURE;
 	}
@@ -297,7 +384,10 @@ int main(int  argc , char ** argv) {
 			return EXIT_FAILURE;
 			break;
 		}
-		duplication_test(argv[2] , "/mnt/ouiche/duplicationtest.txt",1);
+		if(argc == 3)
+			duplication_test(argv[2] , argv[3],1);
+		else
+			duplication_test(argv[2] , "/mnt/ouiche/duplicationtest.txt",1);
 		break;
 	case 2 :
 		/*
@@ -350,7 +440,21 @@ int main(int  argc , char ** argv) {
 		}else
 			write_new("/mnt/ouiche/newwritetest.txt");
 		break;
-
+	case 7 :
+		/*
+		* test write : ecriture dans un fichier à un offest de la fin de un bloc
+		*/
+		if(argc == 3){
+			write_offset_fromTheEnd(argv[2] , OFFSET);
+		}else
+			write_offset_fromTheEnd("/mnt/ouiche/offsetwritetest.txt" , OFFSET);
+		break;
+	case 8 :
+		/*
+		* Tous les tests d'ecriture sur des fichiers
+		*/
+		write_test();
+		break;
 	default:
 		fprintf(stdout, "Usage: benchmark <option> <path_to_source_file>\n");
 		fprintf(stdout, "-d : duplication\n-r :read\n-w :write append\n-ws :write at the start\n-wm :write in the middle\n-wa :write in a new\n");
