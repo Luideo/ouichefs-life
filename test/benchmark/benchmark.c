@@ -17,8 +17,10 @@
 #define WRI "TEST WRITE"
 #define SIZEWRI 11
 #define SIZEOW 11
-#define OFFSET 4096
-
+#define OFFSET1 4096
+#define OFFSET2 1024
+#define READTEXT "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Donec finibus neque eu sem maximus euismod. Class aptent taciti sociosqu ad litora torquent per conubia nostra"
+#define CLOCKS_PER_MQ (CLOCKS_PER_SEC/1000000)
 /*
 * affiche un un buffer complet : ainsi que tous les caractères non imprimable
 */
@@ -85,7 +87,7 @@ void duplication_test(const char * src_path, const char *dest_path, int testing)
 	clock_t end = clock();
 	close(dest_fd);
 	if(testing)
-		printf("duplication test: temps:%ld | lecture: %d | Ecriture: %d\n", (end-begin)/ CLOCKS_PER_SEC, totalread, totalwritten);
+		printf("duplication test: temps:%ld | lecture: %d | Ecriture: %d\n", (end-begin)/ CLOCKS_PER_MQ, totalread, totalwritten);
 }
 
 /*
@@ -185,15 +187,15 @@ void read_test(const char * src){
 	int emp = read_empty(&empc);
 	int all = read_all(src_fd,&allc);
 
-	printf("\nRead au Debut: lecture: %d | attendu: %d | time %ld\n",be,(int)( (NBCHAR>st.st_size)? st.st_size:NBCHAR ) , bec/ CLOCKS_PER_SEC);
-	printf("Read au Milieu: lecture: %d | attendu: %d | time %ld\n",mid,(int)( (NBCHAR>st.st_size/2)? st.st_size/2:NBCHAR ) , mic/ CLOCKS_PER_SEC);
-	printf("Read vide: lecture: %d | attendu: %d | time %ld\n",emp, 0 , empc/ CLOCKS_PER_SEC);
-	printf("Read entier: lecture: %d | attendu: %d | time %ld\n",all, (int)st.st_size , allc / CLOCKS_PER_SEC);
+	printf("\nRead au Debut: lecture: %d | attendu: %d | time %ld\n",be,(int)( (NBCHAR>st.st_size)? st.st_size:NBCHAR ) , bec/ CLOCKS_PER_MQ);
+	printf("Read au Milieu: lecture: %d | attendu: %d | time %ld\n",mid,(int)( (NBCHAR>st.st_size/2)? st.st_size/2:NBCHAR ) , mic/ CLOCKS_PER_MQ);
+	printf("Read vide: lecture: %d | attendu: %d | time %ld\n",emp, -1 , empc/ CLOCKS_PER_MQ);
+	printf("Read entier: lecture: %d | attendu: %d | time %ld\n",all, (int)st.st_size , allc / CLOCKS_PER_MQ);
 
 	close(src_fd);
 }
 
-int write_append(const char * src){
+int write_append(const char * src, int test , int rdt){
 	int written = 0;
 	int src_fd = open(src, O_CREAT | O_WRONLY | O_APPEND, 0666);
 
@@ -206,15 +208,21 @@ int write_append(const char * src){
 	int taille_avant= st.st_size;
 
 	clock_t begin = clock();
-	written = write(src_fd,WRI, SIZEWRI);
+	if(rdt)
+		written = write(src_fd,READTEXT , sizeof(READTEXT));
+	else  
+		written = write(src_fd,WRI, SIZEWRI);
 	clock_t end = clock();
 
 	fstat(src_fd, &st);
 
 	close(src_fd);
-
-	printf("Write append:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_SEC);
-	printf("Write append:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant + SIZEWRI);
+	if(test)
+	{
+		printf("Write append:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_MQ);
+		printf("Write append:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant + SIZEWRI);
+	}
+	
 	return written;
 }
 
@@ -237,7 +245,7 @@ int write_new(const char * src){
 	fstat(src_fd, &st);
 
 	close(src_fd);
-	printf("Write new:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_SEC);
+	printf("Write new:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_MQ);
 	printf("Write new:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant + SIZEWRI);
 	return written;
 }
@@ -262,8 +270,8 @@ int write_start(const char * src){
 	fstat(src_fd, &st);
 
 	close(src_fd);
-	printf("Write start:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_SEC);
-	printf("Write start:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant + SIZEOW);
+	printf("Write start:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_MQ);
+	printf("Write start:  Taille fichier: %d \n" , (int)st.st_size );
 	return written;
 }
 
@@ -288,8 +296,8 @@ int write_mid(const char * src){
 	fstat(src_fd, &st);
 
 	close(src_fd);
-	printf("Write mid:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_SEC);
-	printf("Write mid:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant + SIZEOW);
+	printf("Write mid:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_MQ);
+	printf("Write mid:  Taille fichier: %d \n" , (int)st.st_size );
 	return written;
 }
 
@@ -313,7 +321,7 @@ int write_offset_fromTheEnd(const char * src , size_t offset){
 	fstat(src_fd , &st);
 
 	close(src_fd);
-	printf("Write off:  ecriture: %d | attendu: %d | time: %ld\n" , written , (int)(SIZEWRI+offset) , (end-begin)/ CLOCKS_PER_SEC);
+	printf("Write off:  ecriture: %d | attendu: %d | time: %ld\n" , written , (int)(SIZEWRI) , (end-begin)/ CLOCKS_PER_MQ);
 	printf("Write off:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , (int)(taille_avant + SIZEWRI + offset));
 	return written;
 }
@@ -322,7 +330,7 @@ int write_offset_fromTheEnd(const char * src , size_t offset){
  * insert dans un fichier à l'offset donnée 
  * fait pour être utilisé avec el comportement classique du write et du read  
 */
-int insertion(const char src , size_t offset , clock_t * time , int * sizeFicPrec){
+int insertion(const char * src , size_t offset , clock_t * time , int * sizeFicPrec , int test){
 	int src_fd = open(src , O_CREAT| O_RDONLY , 0666);
 	int dest_fd = open(src,O_CREAT| O_WRONLY , 0666);
 	int taille_apres = 0;
@@ -366,12 +374,16 @@ int insertion(const char src , size_t offset , clock_t * time , int * sizeFicPre
 
 	close(src_fd);
 	close(dest_fd);
+	if(test){
+		printf("insertion: time: %ld\n" , (end-begin)/ CLOCKS_PER_MQ);
+		printf("insertion:  Taille fichier: %d | attendu: %d \n" , (int)taille_apres , (int)(*sizeFicPrec + SIZEWRI + offset));
+	}
 	return taille_apres;
 }
 
 void write_test(){
 	printf("======== test append dans /mnt/ouiche/appendwritetest.txt\n");
-	write_append("/mnt/ouiche/appendwritetest.txt");
+	write_append("/mnt/ouiche/appendwritetest.txt",1,0);
 	printf("======== test start dans /mnt/ouiche/startwritetest.txt\n");
 	write_start("/mnt/ouiche/startwritetest.txt");
 	printf("======== test mid dans /mnt/ouiche/midwritetest.txt\n");
@@ -379,7 +391,67 @@ void write_test(){
 	printf("======== test new dans /mnt/ouiche/newwritetest.txt\n");
 	write_new("/mnt/ouiche/newwritetest.txt");
 	printf("======== test offset dans /mnt/ouiche/offsetwritetest.txt\n");
-	write_offset_fromTheEnd("/mnt/ouiche/offsetwritetest.txt" , OFFSET);
+	write_offset_fromTheEnd("/mnt/ouiche/offsetwritetest.txt" , OFFSET2);
+}
+
+int test_all(const char * src_rep)
+{
+	struct stat help;
+	stat(src_rep , &help);
+	if(! S_ISDIR(help.st_mode)){
+		printf("Dossier non existant %s\n" , src_rep);
+		return -1;
+	}
+	printf("src_rep : %s\n" , src_rep);
+
+	size_t sz = strlen(src_rep);
+
+	char * read = "/loremtest.txt";
+	char * app = "/appendwritetest.txt";
+	char * start = "/startwritetest.txt";
+	char * mid = "/midwritetest.txt";
+	char * new = "/newwritetest.txt";
+	char * off = "/offsetwritetest.txt"; 
+	char * cop ="/copy.txt"; 
+
+	char path[MAX_BUFF];
+	memcpy(path,src_rep,sz);
+	path[strlen(src_rep)] = '/';
+	memcpy(path+sz,read,15);
+
+	char tmp [MAX_BUFF];
+	memcpy(tmp ,path , 15+sz);
+
+	write_append(path,0,1);
+	read_test(path);
+	
+	memcpy(path+(sz),app,21);
+	printf("\n======== test append dans %s\n", path);
+	write_append(path,1,0);
+
+	memcpy(path+(sz),start,20);
+	printf("\n======== test start dans %s\n", path);
+	write_start(path);
+	write_start(path);
+
+	memcpy(path+(sz),mid,18);
+	printf("\n======== test mid dans %s\n", path);
+	write_mid(path);
+	write_mid(path);
+
+	memcpy(path+(sz),new,18);
+	printf("\n======== test new dans %s\n" , path);
+	write_new(path);
+
+	memcpy(path+(sz),off,21);
+	printf("\n======== test offset dans %s\n" ,path);
+	write_offset_fromTheEnd( path, OFFSET2);
+	write_offset_fromTheEnd( path, OFFSET1);
+
+	printf("\n");
+	memcpy(path+(sz),cop,10);
+	duplication_test(tmp , path , 1);
+
 }
 
 int toParam(const char * param){
@@ -417,15 +489,20 @@ int toParam(const char * param){
 		return 9;
 	}
 
+	if(strcmp("-A" , param) == 0){
+		return 10;
+	}
+
 	return 0;
 }
 
 int main(int  argc , char ** argv) {
 
 	if(argc < 2) {
-		fprintf(stdout, "Usage: benchmark <option> <path_to_source_file>\n");
+		fprintf(stdout, "Usage: benchmark <option> <path>\n");
 		fprintf(stdout, "-d : duplication\n-r :read\n-w :write append\n-ws :write at the start\n-wm :write in the middle\n-wa :write in a new\n");
-		fprintf(stdout, "-wo :write with an offset\n-wall :all of the write tests");
+		fprintf(stdout, "-wo :write with an offset\n");
+		fprintf(stdout, "-A <path_to_directory> :all the test\n");
 		fprintf(stdout, "attention pour les writes les fichiers risquent d'être détruits\n");
 		return EXIT_FAILURE;
 	}
@@ -463,9 +540,9 @@ int main(int  argc , char ** argv) {
 		* test write : append un fichier
 		*/
 		if(argc == 3){
-			write_append(argv[2]);
+			write_append(argv[2],1,0);
 		}else
-			write_append("/mnt/ouiche/appendwritetest.txt");
+			write_append("/mnt/ouiche/appendwritetest.txt",1,0);
 		break;
 
 	case 4 :
@@ -502,9 +579,9 @@ int main(int  argc , char ** argv) {
 		* test write : ecriture dans un fichier à un offest de la fin de un bloc
 		*/
 		if(argc == 3){
-			write_offset_fromTheEnd(argv[2] , OFFSET);
+			write_offset_fromTheEnd(argv[2] , OFFSET1);
 		}else
-			write_offset_fromTheEnd("/mnt/ouiche/offsetwritetest.txt" , OFFSET);
+			write_offset_fromTheEnd("/mnt/ouiche/offsetwritetest.txt" , OFFSET1);
 		break;
 	case 8 :
 		/*
@@ -516,11 +593,21 @@ int main(int  argc , char ** argv) {
 		/**
 		 * insertion dans un fichier 
 		*/
-		
+		clock_t tmp;
+		int sizebefore ;
+		insertion(argv[2] , NBCHAR , &tmp,&sizebefore, 1);
+		break;
+	case 10 :
+		if(argc == 3){
+			test_all(argv[2]);
+			break;
+		}
 	default:
-		fprintf(stdout, "Usage: benchmark <option> <path_to_source_file>\n");
+		fprintf(stdout, "Usage: benchmark <option> <path_>\n");
 		fprintf(stdout, "-d : duplication\n-r :read\n-w :write append\n-ws :write at the start\n-wm :write in the middle\n-wa :write in a new\n");
-		return EXIT_FAILURE;
+		fprintf(stdout, "-wo :write with an offset\n");
+		fprintf(stdout, "-A <path_to_directory> :all the test\n");
+		fprintf(stdout, "attention pour les writes les fichiers risquent d'être détruits\n");
 		break;
 	}
 
