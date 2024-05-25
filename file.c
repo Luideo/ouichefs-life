@@ -751,6 +751,7 @@ static void ouichefs_get_frag(struct inode *inode, int *part_filled_blocks, int 
 	struct ouichefs_file_index_block *index;
 	struct ouichefs_inode_info *ci = OUICHEFS_INODE(inode);
 	struct buffer_head *bh_index;
+	*intern_frag_waste = 0;
 
 	bh_index = sb_bread(sb, ci->index_block);
 
@@ -830,6 +831,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd, unsigned l
 				pr_info("Block %d: %d bytes\n", block_number, block_size);
 				struct buffer_head *bh = sb_bread(sb, block_number);
 				pr_info("Block %d: %s\n", block_number, bh->b_data);
+				pr_info("i_blocks = %llu\n", inode->i_blocks);
 			}
 
 			brelse(bh_index);
@@ -837,8 +839,10 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd, unsigned l
 			return 0;
 		case DEFRAG:
 			ouichefs_get_frag(inode, &part_filled_blocks, &intern_frag_waste);
-			while(intern_frag_waste){
-				bh_index = sb_bread(sb, ci->index_block);
+			int frag_last_block = 0;
+			bh_index = sb_bread(sb, ci->index_block);
+			while(intern_frag_waste - frag_last_block){
+				frag_last_block = 0;
 
 				if (!bh_index)
 					return -EIO;
@@ -856,10 +860,14 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd, unsigned l
 					if(block_size == OUICHEFS_BLOCK_SIZE)
 						continue;
 					
-					if(index->blocks[i+1] == 0)
-						break;
-
 					int to_be_filled = OUICHEFS_BLOCK_SIZE - block_size;
+
+					if(i == inode->i_blocks-1) {
+						ouichefs_get_frag(inode, &part_filled_blocks, &intern_frag_waste);
+						frag_last_block = to_be_filled;
+						break;
+					}
+
 					int next_block_size = (index->blocks[i+1] >> 20);
 					int next_block_number = (index->blocks[i+1] & 0x000FFFFF);
 					int to_be_moved = min(to_be_filled, next_block_size);
@@ -876,11 +884,45 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd, unsigned l
 					memcpy(buffer + block_size, buffer_next, to_be_moved);
 					memmove(buffer_next, buffer_next + to_be_moved, next_block_size - to_be_moved);
 					memset(buffer_next + next_block_size - to_be_moved, 0, to_be_moved);
+
+					block_size = block_size + to_be_moved;
+					next_block_size = next_block_size - to_be_moved;
+					pr_info("Next block number: %d; Next block size: %d\n", next_block_number, next_block_size);
+
+					index->blocks[i] = (block_size << 20) + block_number;
+					index->blocks[i+1] = (next_block_size << 20) + next_block_number;
+
+					mark_buffer_dirty(bh);
+					mark_buffer_dirty(bh_next);
+
+					sync_dirty_buffer(bh);
+					sync_dirty_buffer(bh_next);
+
+					if(next_block_size == 0) {
+						pr_info("Block %d is empty, removing it\n", next_block_number);
+						for(int j = i+1; j <= inode->i_blocks; j++) {
+							index->blocks[j] = index->blocks[j+1];
+						}
+						put_block(OUICHEFS_SB(sb), next_block_number);
+						inode->i_blocks--;
+					}
+
+					brelse(bh);
+					brelse(bh_next);
 				}
 
-				brelse(bh_index);
+				mark_buffer_dirty(bh_index);
+
 				ouichefs_get_frag(inode, &part_filled_blocks, &intern_frag_waste);
+				pr_info("internal_frag_waste=%d, frag_last_block=%d, internal_frag_waste-frag_last_block=%d", intern_frag_waste, frag_last_block, intern_frag_waste-frag_last_block);
 			}
+
+			// Put back the "block" zero at the end of the index
+			index->blocks[inode->i_blocks] = 0;
+			inode->i_blocks++;
+			
+			brelse(bh_index);
+
 			return 0;
 		default:		
 			pr_info("ouiche_ioctl: unknown command\n");
