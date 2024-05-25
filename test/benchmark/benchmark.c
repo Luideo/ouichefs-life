@@ -15,13 +15,13 @@
 #define MAX_BUFF 256
 #define NBCHAR 10
 #define WRI "TEST WRITE"
-#define SIZEWRI 10
-#define SIZEOW 10
-#define OFFSET 11
-/*
-* Duplique le fichier src_path vers dest_path
-*/
+#define SIZEWRI 11
+#define SIZEOW 11
+#define OFFSET 4096
 
+/*
+* affiche un un buffer complet : ainsi que tous les caractères non imprimable
+*/
 void print_comp(const char * src , size_t size )
 {	
 	char buuf[size*2+1];
@@ -54,6 +54,9 @@ void print_comp(const char * src , size_t size )
 	printf("%s\n" , buuf);
 }
 
+/*
+* Duplique le fichier src_path vers dest_path
+*/
 void duplication_test(const char * src_path, const char *dest_path, int testing) {
 
 	int src_fd = open(src_path, O_RDWR );
@@ -88,7 +91,6 @@ void duplication_test(const char * src_path, const char *dest_path, int testing)
 /*
 lit nb_char caractère depuis le début du fichier
 */
-
 int read_start(int src_fd , int nb_char , clock_t * time){
 	lseek(src_fd, 0, SEEK_SET);
 
@@ -316,6 +318,57 @@ int write_offset_fromTheEnd(const char * src , size_t offset){
 	return written;
 }
 
+/*
+ * insert dans un fichier à l'offset donnée 
+ * fait pour être utilisé avec el comportement classique du write et du read  
+*/
+int insertion(const char src , size_t offset , clock_t * time , int * sizeFicPrec){
+	int src_fd = open(src , O_CREAT| O_RDONLY , 0666);
+	int dest_fd = open(src,O_CREAT| O_WRONLY , 0666);
+	int taille_apres = 0;
+
+	if(src_fd < 0 || dest_fd < 0){
+		fprintf(stdout, "Fichier non_existant %s\n" , src);
+		return -1;
+	}
+	struct stat st;
+	fstat(src_fd, &st);
+
+	*sizeFicPrec = st.st_size;
+
+	lseek(src_fd , offset , SEEK_SET);
+	lseek(dest_fd,offset , SEEK_SET);
+
+	char buffwr[MAX_BUFF];
+	char buffrd[MAX_BUFF];
+
+	memset(buffwr , 0 , MAX_BUFF);
+	memset(buffrd , 0 , MAX_BUFF);
+	memcpy(buffwr , WRI , SIZEWRI );
+
+	clock_t begin = clock();
+	size_t total;
+	size_t rd = 0 ;
+	size_t wr = 0 ;
+	while((rd = read(src_fd , buffrd , MAX_BUFF)) > 0 ){
+		write(dest_fd , buffwr , wr);
+		memset(buffwr , 0 , MAX_BUFF);
+		wr = rd;
+		memcpy(buffwr , buffrd , rd );
+		memset(buffrd , 0 , MAX_BUFF);
+	}
+
+	clock_t end = clock();
+	*time = end - begin ; 
+
+	fstat(src_fd, &st);
+	taille_apres = st.st_size;
+
+	close(src_fd);
+	close(dest_fd);
+	return taille_apres;
+}
+
 void write_test(){
 	printf("======== test append dans /mnt/ouiche/appendwritetest.txt\n");
 	write_append("/mnt/ouiche/appendwritetest.txt");
@@ -358,6 +411,10 @@ int toParam(const char * param){
 
 	if(strcmp("-wall" , param) == 0){
 		return 8;
+	}
+
+	if(strcmp("-i" , param) == 0){
+		return 9;
 	}
 
 	return 0;
@@ -455,6 +512,11 @@ int main(int  argc , char ** argv) {
 		*/
 		write_test();
 		break;
+	case 9 : 
+		/**
+		 * insertion dans un fichier 
+		*/
+		
 	default:
 		fprintf(stdout, "Usage: benchmark <option> <path_to_source_file>\n");
 		fprintf(stdout, "-d : duplication\n-r :read\n-w :write append\n-ws :write at the start\n-wm :write in the middle\n-wa :write in a new\n");
