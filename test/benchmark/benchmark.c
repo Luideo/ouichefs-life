@@ -69,13 +69,15 @@ void duplication_test(const char * src_path, const char *dest_path, int testing)
 		return ;
 	}
 
-	clock_t begin = clock();
 
+	printf("===== TEST Duplication\n");
 	int totalread = 0;
 	int totalwritten = 0;
 	char buf2[MAX_BUFF];
 	memset(buf2,0,MAX_BUFF);
 	int k ;
+	clock_t begin = clock();
+	
 	while( (k = read(src_fd,buf2,MAX_BUFF)) > 0){
 		//printf("loop buf: %s\n",buf2);
 		print_comp(buf2 , k);
@@ -87,7 +89,7 @@ void duplication_test(const char * src_path, const char *dest_path, int testing)
 	clock_t end = clock();
 	close(dest_fd);
 	if(testing)
-		printf("duplication test: temps:%ld | lecture: %d | Ecriture: %d\n", (end-begin)/ CLOCKS_PER_MQ, totalread, totalwritten);
+		printf("duplication test: temps: %ld micro_sec | lecture: %d octets | Ecriture: %d octets\n", (end-begin)/ CLOCKS_PER_MQ, totalread, totalwritten);
 }
 
 /*
@@ -95,15 +97,17 @@ lit nb_char caractère depuis le début du fichier
 */
 int read_start(int src_fd , int nb_char , clock_t * time){
 	lseek(src_fd, 0, SEEK_SET);
-
-	clock_t begin = clock();
 	char buff[nb_char+1];
 	memset(buff,0,nb_char+1);
 
+	clock_t begin = clock();
 	int ret = read(src_fd,buff,nb_char);
 	clock_t end = clock();
+
 	*time = (end-begin);
+
 	char * tmp = buff;
+	printf("===== TEST READ START\n");
 	print_comp(buff , ret);
 	printf("\n");
 
@@ -115,11 +119,12 @@ Lit entièrement le fichier
 */
 int read_all(int src_fd , clock_t * time){
 	lseek(src_fd,0,SEEK_SET);
-
 	int total= 0;
 	char buff[MAX_BUFF];
 	memset(buff,0,MAX_BUFF);
 	int r = 0;
+	printf("===== TEST READ ENTIER\n");
+
 	clock_t begin = clock();
 	while((r = read(src_fd,buff,MAX_BUFF-1)) > 0  ){
 		total+=r;
@@ -137,9 +142,12 @@ int read_mid(int src_fd , int nb_char , int pos , clock_t * time){
 
 	char buff[nb_char+1];
 	memset(buff,0,nb_char+1);
+
 	clock_t begin = clock();
 	int ret = read(src_fd,buff,nb_char);
 	clock_t end = clock();
+
+	printf("===== TEST READ MID-FILE\n");
 	print_comp(buff , ret);
 	printf("\n");
 
@@ -148,8 +156,8 @@ int read_mid(int src_fd , int nb_char , int pos , clock_t * time){
 	return ret;
 }
 
-int read_empty(clock_t * time){
-	int src_fd = open("/mnt/ouiche/readempty.txt" , O_TRUNC | O_CREAT |O_RDWR, 0666);
+int read_empty(const char * src,clock_t * time){
+	int src_fd = open(src , O_TRUNC | O_CREAT |O_RDWR, 0666);
 	if(src_fd < 0){
 		return -1 ;
 	}
@@ -161,6 +169,7 @@ int read_empty(clock_t * time){
 	ret = read(src_fd,buff,MAX_BUFF);
 	clock_t end = clock();
 	
+	printf("===== TEST READ EMPTY\n");
 	print_comp(buff , ret);
 	printf("\n");
 
@@ -169,7 +178,7 @@ int read_empty(clock_t * time){
 	return ret ;
 }
 
-void read_test(const char * src){
+void read_test(const char * src , const char * rep){
 	int src_fd = open(src,O_RDONLY);
 	if(src_fd == -1 ){
 		fprintf(stdout, "Fichier non_existant\n");
@@ -184,13 +193,20 @@ void read_test(const char * src){
 	clock_t allc = 0;
 	int be = read_start(src_fd , NBCHAR,&bec);
 	int mid = read_mid(src_fd, NBCHAR , st.st_size/2,&mic);
-	int emp = read_empty(&empc);
+	size_t sz = strlen(rep);
+	char path[MAX_BUFF];
+	memcpy(path,rep,sz);
+	path[sz] = '/';
+	memcpy(path+sz,"readempty.txt",14);
+	int emp = read_empty(path,&empc);
 	int all = read_all(src_fd,&allc);
 
-	printf("\nRead au Debut: lecture: %d | attendu: %d | time %ld\n",be,(int)( (NBCHAR>st.st_size)? st.st_size:NBCHAR ) , bec/ CLOCKS_PER_MQ);
-	printf("Read au Milieu: lecture: %d | attendu: %d | time %ld\n",mid,(int)( (NBCHAR>st.st_size/2)? st.st_size/2:NBCHAR ) , mic/ CLOCKS_PER_MQ);
-	printf("Read vide: lecture: %d | attendu: %d | time %ld\n",emp, -1 , empc/ CLOCKS_PER_MQ);
-	printf("Read entier: lecture: %d | attendu: %d | time %ld\n",all, (int)st.st_size , allc / CLOCKS_PER_MQ);
+	printf("\nRead au Debut: lecture: %d octets | attendu: %d octets | time %ld micro_sec\n",be,(int)( (NBCHAR>st.st_size)? st.st_size:NBCHAR ) , bec/ CLOCKS_PER_MQ);
+	printf("Read au Milieu: lecture: %d octets | attendu: %d octets | time %ld micro_sec\n",mid,(int)( (NBCHAR>st.st_size/2)? st.st_size/2:NBCHAR ) , mic/ CLOCKS_PER_MQ);
+	if(emp >= 0 ){
+		printf("Read vide: lecture: %d octets | attendu: %d octets | time %ld micro_sec\n",emp, 0 , empc/ CLOCKS_PER_MQ);
+	}
+	printf("Read entier: lecture: %d octets | attendu: %d octets | time %ld micro_sec\n",all, (int)st.st_size , allc / CLOCKS_PER_MQ);
 
 	close(src_fd);
 }
@@ -219,8 +235,8 @@ int write_append(const char * src, int test , int rdt){
 	close(src_fd);
 	if(test)
 	{
-		printf("Write append:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_MQ);
-		printf("Write append:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant + SIZEWRI);
+		printf("Write append:  ecriture: %d octets | attendu: %d octets | time: %ld micro_sec\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_MQ);
+		printf("Write append:  Taille fichier: %d octets | attendu: %d octets \n" , (int)st.st_size , taille_avant + SIZEWRI);
 	}
 	
 	return written;
@@ -245,8 +261,8 @@ int write_new(const char * src){
 	fstat(src_fd, &st);
 
 	close(src_fd);
-	printf("Write new:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_MQ);
-	printf("Write new:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , taille_avant + SIZEWRI);
+	printf("Write new:  ecriture: %d octets | attendu: %d octets | time: %ld micro_sec\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_MQ);
+	printf("Write new:  Taille fichier: %d octets | attendu: %d octets \n" , (int)st.st_size , taille_avant + SIZEWRI);
 	return written;
 }
 
@@ -270,8 +286,8 @@ int write_start(const char * src){
 	fstat(src_fd, &st);
 
 	close(src_fd);
-	printf("Write start:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_MQ);
-	printf("Write start:  Taille fichier: %d \n" , (int)st.st_size );
+	printf("Write start:  ecriture: %d octets | attendu: %d octets | time: %ld micro_sec\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_MQ);
+	printf("Write start:  Taille fichier: %d octets \n" , (int)st.st_size );
 	return written;
 }
 
@@ -296,8 +312,8 @@ int write_mid(const char * src){
 	fstat(src_fd, &st);
 
 	close(src_fd);
-	printf("Write mid:  ecriture: %d | attendu: %d | time: %ld\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_MQ);
-	printf("Write mid:  Taille fichier: %d \n" , (int)st.st_size );
+	printf("Write mid:  ecriture: %d octets | attendu: %d octets | time: %ld micro_sec\n" , written , SIZEWRI , (end-begin)/ CLOCKS_PER_MQ);
+	printf("Write mid:  Taille fichier: %d octets \n" , (int)st.st_size );
 	return written;
 }
 
@@ -321,8 +337,8 @@ int write_offset_fromTheEnd(const char * src , size_t offset){
 	fstat(src_fd , &st);
 
 	close(src_fd);
-	printf("Write off:  ecriture: %d | attendu: %d | time: %ld\n" , written , (int)(SIZEWRI) , (end-begin)/ CLOCKS_PER_MQ);
-	printf("Write off:  Taille fichier: %d | attendu: %d \n" , (int)st.st_size , (int)(taille_avant + SIZEWRI + offset));
+	printf("Write off:  ecriture: %d octets | attendu: %d octets | time: %ld micro_sec\n" , written , (int)(SIZEWRI) , (end-begin)/ CLOCKS_PER_MQ);
+	printf("Write off:  Taille fichier: %d octets | attendu: %d octets \n" , (int)st.st_size , (int)(taille_avant + SIZEWRI + offset));
 	return written;
 }
 
@@ -375,8 +391,8 @@ int insertion(const char * src , size_t offset , clock_t * time , int * sizeFicP
 	close(src_fd);
 	close(dest_fd);
 	if(test){
-		printf("insertion: time: %ld\n" , (end-begin)/ CLOCKS_PER_MQ);
-		printf("insertion:  Taille fichier: %d | attendu: %d \n" , (int)taille_apres , (int)(*sizeFicPrec + SIZEWRI + offset));
+		printf("insertion: time: %ld micro_sec\n" , (end-begin)/ CLOCKS_PER_MQ);
+		printf("insertion:  Taille fichier: %d octets | attendu: %d octets \n" , (int)taille_apres , (int)(*sizeFicPrec + SIZEWRI + offset));
 	}
 	return taille_apres;
 }
@@ -423,7 +439,7 @@ int test_all(const char * src_rep)
 	memcpy(tmp ,path , 15+sz);
 
 	write_append(path,0,1);
-	read_test(path);
+	read_test(path,src_rep);
 	
 	memcpy(path+(sz),app,21);
 	printf("\n======== test append dans %s\n", path);
@@ -532,7 +548,7 @@ int main(int  argc , char ** argv) {
 			return EXIT_FAILURE;
 			break;
 		}
-		read_test(argv[2]);
+		read_test(argv[2],"/mnt/ouiche");
 		break;
 
 	case 3 :
