@@ -816,7 +816,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd,
 			int block_size = (index->blocks[i] >> 20);
 			int block_number = (index->blocks[i] & 0x000FFFFF);
 
-			struct buffer_head *bh = sb_bread(sb, block_number);
+			pr_info("Block %d: %d bytes\n", block_number, block_size);
 		}
 
 		brelse(bh_index);
