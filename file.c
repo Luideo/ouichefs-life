@@ -584,7 +584,11 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 				brelse(bh_index);
 				return -ENOSPC;
 			}
-			
+			//modification de la taille du bloc 
+			//ajout de cette taille dans le fichier 
+			//bloc composé de 0 
+			bno+=(0xFFF00000);
+			inode->i_size += OUICHEFS_BLOCK_SIZE;
 			inode->i_blocks++;
 			index->blocks[i] = bno;
 			mark_buffer_dirty(bh_index);
