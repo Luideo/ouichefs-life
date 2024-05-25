@@ -258,14 +258,13 @@ ouichefs_find_block(struct inode *inode, loff_t *pos, sector_t *iblock,
 		int block_size = (index->blocks[i] >> 20);
 
 		total += block_size;
-		pr_info("i=%d, total=%d\n", i, total);
 		if ((write_mode && total >= *pos) ||
 		    ((!write_mode && total > *pos))) {
 			*iblock = i;
 			return *pos - tmp;
 		}
 	}
-	//ecriture dans un nouveau bloc : ibloc = 0 et la position dns le bloc = 0
+	/* ecriture dans un nouveau bloc : ibloc = 0 et la position dns le bloc = 0 */
 	int pos_in_bloc = (*pos - total) % OUICHEFS_BLOCK_SIZE;
 	int div = (*pos - total) / OUICHEFS_BLOCK_SIZE;
 	*iblock = i + div;
@@ -317,7 +316,7 @@ static ssize_t ouichefs_read(struct file *file, char __user *data, size_t len,
 
 	char *buffer = bh->b_data;
 
-	// get data from the buffer from the current position
+	/* get data from the buffer from the current position */
 	buffer += *pos % OUICHEFS_BLOCK_SIZE;
 
 	if (bh->b_size < len)
@@ -363,12 +362,8 @@ static ssize_t ouichefs_read_insert(struct file *file, char __user *data,
 		return -EIO;
 	index = (struct ouichefs_file_index_block *)bh_index->b_data;
 
-	pr_info("len=%lu\n", len);
 	loff_t pos_in_block =
 		ouichefs_find_block(file->f_inode, pos, &iblock, index, 0);
-
-	pr_info("pos=%llu, iblock=%llu, pos_in_block=%llu\n", *pos, iblock,
-		pos_in_block);
 
 	/* If block number exceeds filesize, fail */
 	if (iblock >= OUICHEFS_BLOCK_SIZE >> 2)
@@ -379,8 +374,6 @@ static ssize_t ouichefs_read_insert(struct file *file, char __user *data,
 	int size_block = (bno >> 20);
 	int block_number = (bno & 0x000FFFFF);
 
-	pr_info("block_number=%d\n", block_number);
-
 	if (bno == 0) {
 		brelse(bh_index);
 		return -EIO;
@@ -389,14 +382,13 @@ static ssize_t ouichefs_read_insert(struct file *file, char __user *data,
 	struct buffer_head *bh = sb_bread(sb, block_number);
 
 	if (!bh) {
-		pr_info("%s: block not read\n", __func__);
 		brelse(bh_index);
 		return -EIO;
 	}
 
 	char *buffer = bh->b_data;
 
-	// get data from the buffer from the current position
+	/* get data from the buffer from the current position */
 	buffer += pos_in_block;
 
 	if (size_block - pos_in_block < len)
@@ -425,7 +417,6 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data,
 {
 	struct inode *inode = file->f_inode;
 	struct super_block *sb = inode->i_sb;
-	// struct ouichefs_sb_info *sbi = OUICHEFS_SB(file->f_inode->i_sb);
 	struct ouichefs_inode_info *ci = OUICHEFS_INODE(inode);
 	struct ouichefs_file_index_block *index;
 	struct buffer_head *bh_index, *bh;
@@ -447,10 +438,10 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data,
 	if (!bh_index)
 		return -EIO;
 
-	// Vérifier entre dernier bloc alloué et iblock si des blocs sont alloués, sinon les allouer
+	/* Vérifier entre dernier bloc alloué et iblock si des blocs sont alloués, sinon les allouer */
 	for (int i = 0; i < iblock; i++) {
 		if (index->blocks[i] == 0) {
-			// Allouer un nouveau bloc
+			/* Allouer un nouveau bloc */
 			bno = get_free_block(OUICHEFS_SB(sb));
 			if (!bno) {
 				brelse(bh_index);
@@ -467,9 +458,9 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data,
 		bh_index = sb_bread(sb, ci->index_block);
 		index = (struct ouichefs_file_index_block *)bh_index->b_data;
 		iblock = *pos / OUICHEFS_BLOCK_SIZE;
-		// Vérifier si le bloc est déjà alloué
+		/* Vérifier si le bloc est déjà alloué */
 		if (index->blocks[iblock] == 0) {
-			// Allouer un nouveau bloc
+			/* Allouer un nouveau bloc */
 			bno = get_free_block(OUICHEFS_SB(sb));
 			if (!bno) {
 				brelse(bh_index);
@@ -483,7 +474,7 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data,
 			bno = index->blocks[iblock];
 		}
 
-		// Lire ou initialiser le bloc de données
+		/* Lire ou initialiser le bloc de données */
 		bh = sb_bread(sb, bno);
 		if (!bh) {
 			brelse(bh_index);
@@ -491,12 +482,12 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data,
 		}
 		buffer = bh->b_data;
 
-		// Calculer la quantité de données à écrire dans ce bloc
+		/* Calculer la quantité de données à écrire dans ce bloc */
 		to_be_written =
 			min(len, (size_t)(OUICHEFS_BLOCK_SIZE -
 					  (*pos % OUICHEFS_BLOCK_SIZE)));
 
-		// Copier les données de l'utilisateur dans le bloc de données
+		/* Copier les données de l'utilisateur dans le bloc de données */
 		if (copy_from_user(buffer + (*pos % OUICHEFS_BLOCK_SIZE), data,
 				   to_be_written)) {
 			brelse(bh);
@@ -514,7 +505,7 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data,
 		len -= to_be_written;
 		written += to_be_written;
 
-		// Mettre à jour la taille du fichier si nécessaire
+		/* Mettre à jour la taille du fichier si nécessaire */
 		if (*pos > inode->i_size) {
 			inode->i_size = *pos;
 			mark_inode_dirty(inode);
@@ -532,7 +523,7 @@ static void
 ouichefs_insert_block_to_index(struct ouichefs_file_index_block *index,
 			       sector_t iblock, sector_t new_block)
 {
-	// Décaler les blocs suivants
+	/* Décaler les blocs suivants */
 	int i = iblock + 1;
 	sector_t tmp = index->blocks[i];
 
@@ -545,7 +536,7 @@ ouichefs_insert_block_to_index(struct ouichefs_file_index_block *index,
 		tmp = tmp2;
 	}
 	index->blocks[i++] = tmp;
-	// Insérer le nouveau bloc
+	/* Insérer le nouveau bloc */
 	index->blocks[iblock] = new_block;
 }
 
@@ -579,23 +570,27 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 	if (!bh_index)
 		return -EIO;
 
-	//recuperer le bloc de donnees correspondant au pos
-	//pos relative au bon bloc de donnée
+	/*
+	 * Récuperer le bloc de donnees correspondant au pos
+	 * L'offset pos relative au bon bloc de donnée
+	 */
 	loff_t pos_in_block =
 		ouichefs_find_block(inode, pos, &iblock, index, 1);
 
-	// Vérifier entre dernier bloc alloué et iblock si des blocs sont alloués, sinon les allouer
+	/* Vérifier entre dernier bloc alloué et iblock si des blocs sont alloués, sinon les allouer */
 	for (int i = 0; i < iblock; i++) {
 		if (index->blocks[i] == 0) {
-			// Allouer un nouveau bloc
+			/* Allouer un nouveau bloc */
 			bno = get_free_block(OUICHEFS_SB(sb));
 			if (!bno) {
 				brelse(bh_index);
 				return -ENOSPC;
 			}
-			//modification de la taille du bloc
-			//ajout de cette taille dans le fichier
-			//bloc composé de 0
+			/*
+			 * modification de la taille du bloc
+			 * ajout de cette taille dans le fichier
+			 * bloc composé de 0
+			 */
 			bno += (0xFFF00000);
 			inode->i_size += OUICHEFS_BLOCK_SIZE;
 			inode->i_blocks++;
@@ -611,9 +606,9 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 		pos_in_block =
 			ouichefs_find_block(inode, pos, &iblock, index, 1);
 
-		// Vérifier si le bloc n'est pas déjà alloué
+		/* Vérifier si le bloc n'est pas déjà alloué */
 		if (index->blocks[iblock] == 0) {
-			// Allouer un nouveau bloc
+			/* Allouer un nouveau bloc */
 			bno = get_free_block(OUICHEFS_SB(sb));
 			if (!bno) {
 				brelse(bh_index);
@@ -626,7 +621,7 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 		} else
 			bno = index->blocks[iblock];
 
-		// Lire ou initialiser le bloc de données
+		/* Lire ou initialiser le bloc de données */
 		bno = (index->blocks[iblock] & 0x000FFFFF);
 		int size_block = (index->blocks[iblock] >> 20);
 
@@ -637,9 +632,9 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 		}
 		buffer = bh->b_data;
 
-		//cas 2 :
+		/* cas 2 : insertion de données dans un bloc à un offset où des données sont présentes */
 		if (pos_in_block < size_block) {
-			//allouer un nouveau bloc
+			/* allouer un nouveau bloc */
 			sector_t bisno = get_free_block(OUICHEFS_SB(sb));
 
 			if (!bisno) {
@@ -673,7 +668,7 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 			size_block = pos_in_block;
 		}
 
-		//cas 3 //ajout dans le bloc avec un gap
+		/* cas 3 ajout dans le bloc avec un gap entre size_block et l'offset */
 		if (pos_in_block > size_block && pos_in_block) {
 			memset(buffer + size_block, 0,
 			       pos_in_block - size_block);
@@ -683,13 +678,12 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 			mark_inode_dirty(inode);
 		}
 
-		//cas 1 : write append
-		// Calculer la quantité de données à écrire dans ce bloc
-		//to_be_written = min(len, (size_t)(OUICHEFS_BLOCK_SIZE - (*pos % OUICHEFS_BLOCK_SIZE)));
+		/* cas 1 : write append */
+		/* Calculer la quantité de données à écrire dans ce bloc */
 		to_be_written =
 			min(len, (size_t)(OUICHEFS_BLOCK_SIZE - size_block));
 
-		// Copier les données de l'utilisateur dans le bloc de données
+		/* Copier les données de l'utilisateur dans le bloc de données */
 		if (copy_from_user(buffer + (pos_in_block), data,
 				   to_be_written)) {
 			brelse(bh);
@@ -713,7 +707,7 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 		len -= to_be_written;
 		written += to_be_written;
 
-		// Mettre à jour la taille du fichier si nécessaire
+		/* Mettre à jour la taille du fichier si nécessaire */
 		if (*pos > inode->i_size) {
 			inode->i_size = *pos;
 			mark_inode_dirty(inode);
@@ -743,7 +737,7 @@ static void ouichefs_get_frag(struct inode *inode, int *part_filled_blocks,
 	index = (struct ouichefs_file_index_block *)bh_index->b_data;
 
 	for (int i = 0; i < inode->i_blocks - 1; i++) {
-		// La taille du bloc correspond aux 12 premiers bits du numéro de bloc
+		/* La taille du bloc correspond aux 12 premiers bits du numéro de bloc */
 		int block_size = (index->blocks[i] >> 20);
 
 		if (block_size < OUICHEFS_BLOCK_SIZE) {
@@ -781,7 +775,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd,
 		snprintf(used_blocks_char, 64, "%llu", inode->i_blocks);
 		if (copy_to_user((char *)arg, used_blocks_char,
 				 strlen(used_blocks_char))) {
-			pr_info("%s: copy_to_user failed\n", __func__);
+			pr_err("%s: copy_to_user failed\n", __func__);
 			return -EFAULT;
 		}
 		return 0;
@@ -793,7 +787,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd,
 		snprintf(part_filled_blocks_char, 64, "%d", part_filled_blocks);
 		if (copy_to_user((char *)arg, part_filled_blocks_char,
 				 strlen(part_filled_blocks_char))) {
-			pr_info("%s: copy_to_user failed\n", __func__);
+			pr_err("%s: copy_to_user failed\n", __func__);
 			return -EFAULT;
 		}
 		return 0;
@@ -805,7 +799,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd,
 		snprintf(intern_frag_waste_char, 64, "%d", intern_frag_waste);
 		if (copy_to_user((char *)arg, intern_frag_waste_char,
 				 strlen(intern_frag_waste_char))) {
-			pr_info("%s: copy_to_user failed\n", __func__);
+			pr_err("%s: copy_to_user failed\n", __func__);
 			return -EFAULT;
 		}
 		return 0;
@@ -822,12 +816,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd,
 			int block_size = (index->blocks[i] >> 20);
 			int block_number = (index->blocks[i] & 0x000FFFFF);
 
-			pr_info("Block %d: %d bytes\n", block_number,
-				block_size);
 			struct buffer_head *bh = sb_bread(sb, block_number);
-
-			pr_info("Block %d: %s\n", block_number, bh->b_data);
-			pr_info("i_blocks = %llu\n", inode->i_blocks);
 		}
 
 		brelse(bh_index);
@@ -849,11 +838,13 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd,
 			index = (struct ouichefs_file_index_block *)
 					bh_index->b_data;
 
-			// Pour chaque bloc fragmenté qui n'est pas le dernier, on "rapatrie" les données du bloc suivant
-			// dans le bloc courant. Ceci entraine la fragmentation du bloc suivant, mais on le traitera dans la
-			// prochaine itération du while.
+			/*
+			 * Pour chaque bloc fragmenté qui n'est pas le dernier, on "rapatrie" les données du bloc suivant
+			 * dans le bloc courant. Ceci entraine la fragmentation du bloc suivant, mais on le traitera dans la
+			 * prochaine itération du while.
+			 */
 			for (int i = 0; i < inode->i_blocks - 1; i++) {
-				// La taille du bloc correspond aux 12 premiers bits du numéro de bloc
+				/* La taille du bloc correspond aux 12 premiers bits du numéro de bloc */
 				int block_size = (index->blocks[i] >> 20);
 				int block_number =
 					(index->blocks[i] & 0x000FFFFF);
@@ -900,8 +891,6 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd,
 
 				block_size = block_size + to_be_moved;
 				next_block_size = next_block_size - to_be_moved;
-				pr_info("Next block number: %d; Next block size: %d\n",
-					next_block_number, next_block_size);
 
 				index->blocks[i] =
 					(block_size << 20) + block_number;
@@ -915,8 +904,6 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd,
 				sync_dirty_buffer(bh_next);
 
 				if (next_block_size == 0) {
-					pr_info("Block %d is empty, removing it\n",
-						next_block_number);
 					for (int j = i + 1;
 					     j <= inode->i_blocks; j++) {
 						index->blocks[j] =
@@ -935,12 +922,9 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd,
 
 			ouichefs_get_frag(inode, &part_filled_blocks,
 					  &intern_frag_waste);
-			pr_info("internal_frag_waste=%d, frag_last_block=%d, internal_frag_waste-frag_last_block=%d",
-				intern_frag_waste, frag_last_block,
-				intern_frag_waste - frag_last_block);
 		}
 
-		// Put back the "block" zero at the end of the index
+		/* Put back the "block" zero at the end of the index */
 		index->blocks[inode->i_blocks] = 0;
 		inode->i_blocks++;
 
@@ -974,13 +958,13 @@ static long ouichefs_unlocked_ioctl(struct file *f, unsigned int cmd,
 			snprintf(mode, 7, "normal");
 
 		if (copy_to_user((char *)arg, mode, strlen(mode))) {
-			pr_info("%s: copy_to_user failed\n", __func__);
+			pr_err("%s: copy_to_user failed\n", __func__);
 			return -EFAULT;
 		}
 
 		return 0;
 	default:
-		pr_info("%s: unknown command\n", __func__);
+		pr_warn("%s: unknown command\n", __func__);
 		return -ENOTTY;
 	}
 }
