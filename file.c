@@ -815,8 +815,7 @@ static long ouichefs_defrag(struct inode *inode)
 	uint32_t part_filled_blocks = 0;
 	uint32_t intern_frag_waste = 0;
 
-	ouichefs_get_frag(inode, &part_filled_blocks,
-				&intern_frag_waste);
+	ouichefs_get_frag(inode, &part_filled_blocks, &intern_frag_waste);
 	uint32_t frag_last_block = 0;
 
 	bh_index = sb_bread(sb, ci->index_block);
@@ -825,8 +824,7 @@ static long ouichefs_defrag(struct inode *inode)
 		if (!bh_index)
 			return -EIO;
 
-		index = (struct ouichefs_file_index_block *)
-				bh_index->b_data;
+		index = (struct ouichefs_file_index_block *)bh_index->b_data;
 
 		/*
 		 * Pour chaque bloc fragmenté qui n'est pas le dernier,
@@ -840,8 +838,7 @@ static long ouichefs_defrag(struct inode *inode)
 			 * du numéro de bloc présent dans le tableau d'index
 			 */
 			uint32_t block_size = (index->blocks[i] >> 20);
-			uint32_t block_number =
-				(index->blocks[i] & 0x000FFFFF);
+			uint32_t block_number = (index->blocks[i] & 0x000FFFFF);
 
 			if (block_size == (OUICHEFS_BLOCK_SIZE - 1))
 				continue;
@@ -851,24 +848,21 @@ static long ouichefs_defrag(struct inode *inode)
 
 			/* On ne défragmente pas le dernier bloc : absurdité */
 			if (i == inode->i_blocks - 1) {
-				ouichefs_get_frag(inode,
-							&part_filled_blocks,
-							&intern_frag_waste);
+				ouichefs_get_frag(inode, &part_filled_blocks,
+						  &intern_frag_waste);
 				frag_last_block = to_be_filled;
 				break;
 			}
 
 			/* Récupération des infos du bloc suivant */
-			uint32_t next_block_size =
-				(index->blocks[i + 1] >> 20);
+			uint32_t next_block_size = (index->blocks[i + 1] >> 20);
 			uint32_t next_block_number =
 				(index->blocks[i + 1] & 0x000FFFFF);
 			uint32_t to_be_moved =
 				min(to_be_filled, next_block_size);
 
 			/* Lecture des blocs courant et suivant */
-			struct buffer_head *bh =
-				sb_bread(sb, block_number);
+			struct buffer_head *bh = sb_bread(sb, block_number);
 			struct buffer_head *bh_next =
 				sb_bread(sb, next_block_number);
 
@@ -879,22 +873,20 @@ static long ouichefs_defrag(struct inode *inode)
 			char *buffer_next = bh_next->b_data;
 
 			/* Déplacement des données */
-			memcpy(buffer + block_size, buffer_next,
-				to_be_moved);
+			memcpy(buffer + block_size, buffer_next, to_be_moved);
 			memmove(buffer_next, buffer_next + to_be_moved,
 				next_block_size - to_be_moved);
-			memset(buffer_next + next_block_size - to_be_moved,
-				0, to_be_moved);
+			memset(buffer_next + next_block_size - to_be_moved, 0,
+			       to_be_moved);
 
 			/* Mise à jour des tailles des blocs */
 			block_size = block_size + to_be_moved;
 			next_block_size = next_block_size - to_be_moved;
 
 			/* Mise à jour des numéros de blocs dans l'index */
-			index->blocks[i] =
-				(block_size << 20) + block_number;
-			index->blocks[i + 1] = (next_block_size << 20) +
-						next_block_number;
+			index->blocks[i] = (block_size << 20) + block_number;
+			index->blocks[i + 1] =
+				(next_block_size << 20) + next_block_number;
 
 			mark_buffer_dirty(bh);
 			mark_buffer_dirty(bh_next);
@@ -904,13 +896,11 @@ static long ouichefs_defrag(struct inode *inode)
 
 			/* Décalage des blocs suivants d'un cran vers l'arrière dans l'index */
 			if (next_block_size == 0) {
-				for (uint32_t j = i + 1;
-					j <= inode->i_blocks; j++) {
-					index->blocks[j] =
-						index->blocks[j + 1];
+				for (uint32_t j = i + 1; j <= inode->i_blocks;
+				     j++) {
+					index->blocks[j] = index->blocks[j + 1];
 				}
-				put_block(OUICHEFS_SB(sb),
-						next_block_number);
+				put_block(OUICHEFS_SB(sb), next_block_number);
 				inode->i_blocks--;
 			}
 
@@ -921,7 +911,7 @@ static long ouichefs_defrag(struct inode *inode)
 		mark_buffer_dirty(bh_index);
 
 		ouichefs_get_frag(inode, &part_filled_blocks,
-					&intern_frag_waste);
+				  &intern_frag_waste);
 	}
 
 	/* Put back the "block" zero at the end of the index */
@@ -934,12 +924,11 @@ static long ouichefs_defrag(struct inode *inode)
 
 /*
  * This ioctl provides the following commands :
- * - USED_BLKS:		get the number of blocks used by the file
- * - PART_FILLED_BLKS:	get the number of partially filled blocks
- * - INTERN_FRAG_WASTE:	get the number of bytes wasted due to internal
- *			fragmentation
- * - USED_BLKS_INFO:	get the list of all used blocks with their number
- *			and effective size
+ * - INFO:		diplays multiple informations about the file:
+ *	1. the number of blocks used by the file
+ *	2. the number of partially filled blocks
+ *	3. the number of bytes wasted due to internal fragmentation
+ *	4. the list of all used blocks with their number and effective size
  * - DEFRAG:		defragment the file
  * - SWITCH_MODE:	switch the read/write mode from normal to insert
  *			and vice versa
@@ -962,45 +951,18 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 		return -ENOTTY;
 
 	switch (cmd) {
-	case USED_BLKS:
-		/* USED_BLK : get the number of blocks used by the file */
-		char used_blocks_char[64];
-
-		snprintf(used_blocks_char, 64, "%llu", inode->i_blocks);
-		if (copy_to_user((char *)arg, used_blocks_char,
-				 strlen(used_blocks_char))) {
-			pr_err("%s: copy_to_user failed\n", __func__);
-			return -EFAULT;
-		}
-		return 0;
-	case PART_FILLED_BLKS:
-		/* PART_FILLED_BLKS : get the number of partially filled blocks */
+	case INFO:
+		/* INFO : displays info about the file as described above */
 		ouichefs_get_frag(inode, &part_filled_blocks,
 				  &intern_frag_waste);
-		char part_filled_blocks_char[64];
+		pr_info("Blocks used by the file: %llu blocks\n",
+			inode->i_blocks);
+		pr_info("Partially filled blocks: %d blocks\n",
+			part_filled_blocks);
+		pr_info("Internal fragmentation waste: %d bytes\n",
+			intern_frag_waste);
 
-		snprintf(part_filled_blocks_char, 64, "%d", part_filled_blocks);
-		if (copy_to_user((char *)arg, part_filled_blocks_char,
-				 strlen(part_filled_blocks_char))) {
-			pr_err("%s: copy_to_user failed\n", __func__);
-			return -EFAULT;
-		}
-		return 0;
-	case INTERN_FRAG_WASTE:
-		/* INTERN_FRAG_WASTE : get the number of bytes wasted due to internal fragmentation */
-		ouichefs_get_frag(inode, &part_filled_blocks,
-				  &intern_frag_waste);
-		char intern_frag_waste_char[64];
-
-		snprintf(intern_frag_waste_char, 64, "%d", intern_frag_waste);
-		if (copy_to_user((char *)arg, intern_frag_waste_char,
-				 strlen(intern_frag_waste_char))) {
-			pr_err("%s: copy_to_user failed\n", __func__);
-			return -EFAULT;
-		}
-		return 0;
-	case USED_BLKS_INFO:
-		/* USED_BLKS_INFO : get the list of all used blocks with their number and effective size */
+		/* List of blocks with their effective size */
 		bh_index = sb_bread(sb, ci->index_block);
 
 		if (!bh_index)
