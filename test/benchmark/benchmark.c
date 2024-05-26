@@ -373,7 +373,10 @@ int write_offset_fromTheEnd(const char *src, size_t offset)
 	struct stat st;
 
 	fstat(src_fd, &st);
-	int taille_avant = st.st_size;
+	int taille_avant = st.st_size;	if (src_fd < 0) {
+		fprintf(stdout, "Fichier non_existant\n");
+		return -1;
+	}
 
 	lseek(src_fd, offset, SEEK_END);
 
@@ -454,6 +457,41 @@ int insertion(const char *src, size_t offset, clock_t *time, int *sizeFicPrec,
 	return taille_apres;
 }
 
+int write_big(const char * src , int test){
+	int src_fd = open(src, O_CREAT | O_WRONLY | O_APPEND, 0666);
+
+	if (src_fd < 0) {
+		fprintf(stdout, "Fichier non_existant\n");
+		return -1;
+	}
+	struct stat st;
+	fstat(src_fd, &st);
+	int tailleprec = st.st_size;
+
+	srand(time(NULL));
+	int nbBlockWr = (rand() % 20) + 1;
+	int size = (OFFSET1 -1) * nbBlockWr;
+	char buff[size];
+	memset(buff,'1',size);
+	buff[size -1 ] = 'a';
+
+	int written = 0 ;
+
+	clock_t begin = clock();
+	written = write(src_fd , buff , size);
+	clock_t end = clock();
+
+	fstat(src_fd, &st);
+	close(src_fd);
+	if(test){
+		printf("Write big:  ecriture: %d octets | attendu: %d octets | time: %ld micro_sec\n",
+	    	   written, size, (end - begin) / CLOCKS_PER_MQ);
+		printf("Write big:  Taille fichier: %d octets | Taille precedente: %d octets\n",
+	    	   (int)st.st_size, (int)(tailleprec));
+	}
+	return written;
+}
+
 void write_test(void)
 {
 	printf("======== test append dans /mnt/ouiche/appendwritetest.txt\n");
@@ -488,7 +526,7 @@ int test_all(const char *src_rep)
 	char *new = "/newwritetest.txt";
 	char *off = "/offsetwritetest.txt";
 	char *cop = "/copy.txt";
-
+	char * big = "/bigwritetest.txt";
 	char path[MAX_BUFF];
 
 	memcpy(path, src_rep, sz);
@@ -524,6 +562,10 @@ int test_all(const char *src_rep)
 	printf("\n======== test offset dans %s\n", path);
 	write_offset_fromTheEnd(path, OFFSET2);
 	write_offset_fromTheEnd(path, OFFSET1);
+
+	memcpy(path + (sz) , big , 18);
+	printf("\n======== test big dans %s\n", path);
+	write_big(path, 1);
 
 	printf("\n");
 	memcpy(path + (sz), cop, 10);
@@ -561,6 +603,9 @@ int toParam(const char *param)
 
 	if (strcmp("-A", param) == 0)
 		return 10;
+	
+	if (strcmp("-wb", param) == 0)
+		return 11;
 
 	return 0;
 }
@@ -572,7 +617,9 @@ int main(int argc, char **argv)
 		fprintf(stdout,
 			"-d : duplication\n-r :read\n-w :write append\n-ws :write at the start\n-wm :write in the middle\n-wa :write in a new\n");
 		fprintf(stdout, "-wo :write with an offset\n");
+		fprintf(stdout, "-wb :write multiple blocks\n");
 		fprintf(stdout, "-A <path_to_directory> :all the test\n");
+		fprintf(stdout, "-i :insertion |to be used with the classic write\n");
 		fprintf(stdout,
 			"attention pour les writes les fichiers risquent d'être détruits\n");
 		return EXIT_FAILURE;
@@ -668,11 +715,19 @@ int main(int argc, char **argv)
 		clock_t tmp;
 		int sizebefore;
 
-		insertion(argv[2], NBCHAR, &tmp, &sizebefore, 1);
+		insertion(argv[2], 0, &tmp, &sizebefore, 1);
 		break;
 	case 10:
 		if (argc == 3) {
 			test_all(argv[2]);
+			break;
+		}
+	case 11:
+		/**
+		 * ecriture de plusieurs blocs dans un fichier
+		*/
+		if( argc == 3){
+			write_big(argv[2] , 1);
 			break;
 		}
 	default:
@@ -680,7 +735,9 @@ int main(int argc, char **argv)
 		fprintf(stdout,
 			"-d : duplication\n-r :read\n-w :write append\n-ws :write at the start\n-wm :write in the middle\n-wa :write in a new\n");
 		fprintf(stdout, "-wo :write with an offset\n");
+		fprintf(stdout, "-wb :write multiple blocks\n");
 		fprintf(stdout, "-A <path_to_directory> :all the test\n");
+		fprintf(stdout, "-i :insertion |to be used with the classic write\n");
 		fprintf(stdout,
 			"attention pour les writes les fichiers risquent d'être détruits\n");
 		break;
