@@ -569,7 +569,6 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 	size_t to_be_written, written = 0;
 	sector_t iblock;
 	uint32_t bno;
-	// uint32_t len_over_blksz = 0;
 
 	if (file->f_flags & O_RDONLY)
 		return -EBADF;
