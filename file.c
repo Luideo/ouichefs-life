@@ -243,8 +243,14 @@ static inline size_t ouichefs_file_size(struct inode *inode,
 }
 
 /*
- * Find the correct block to write in the file
- * Return the position in the block
+ * ouichefs_find_block() - Find the correct block to write in the file
+ * @inode:	the inode of the file
+ * @pos:	the position in the file
+ * @iblock:	the index of the block to write in
+ * @index:	the index block of the file
+ * @write_mode:	1 if we are writing, 0 if we are reading
+ *
+ * Return: The position in the block
  */
 static inline loff_t
 ouichefs_find_block(struct inode *inode, loff_t *pos, sector_t *iblock,
@@ -271,9 +277,11 @@ ouichefs_find_block(struct inode *inode, loff_t *pos, sector_t *iblock,
 	/* ecriture dans un nouveau bloc : ibloc = 0 et la position dns le bloc = 0 */
 	uint32_t pos_in_bloc = (*pos - total) % (OUICHEFS_BLOCK_SIZE - 1);
 	uint32_t div = (*pos - total) / (OUICHEFS_BLOCK_SIZE - 1);
+
 	*iblock = i + div;
 	return pos_in_bloc;
 }
+
 /*
  * Read function for the ouichefs filesystem. This function allows to read data without
  * the use of page cache.
@@ -344,9 +352,13 @@ static ssize_t ouichefs_read(struct file *file, char __user *data, size_t len,
 }
 
 /*
- * Read function for the ouichefs filesystem. This function allows to read data without
- * the use of page cache. This read function is the one that reads data written with
- * ouichefs_write_insert function.
+ * Read function for the ouichefs filesystem. This function allows to read data
+ * without the use of page cache. This read function is the one that reads data
+ * written with ouichefs_write_insert function.
+ *
+ * In insert mode, blocks are numbered as follows in the index block:
+ *	- The 12 most significant bits represent the size of the block
+ *	- The 20 least significant bits represent the block number
  */
 static ssize_t ouichefs_read_insert(struct file *file, char __user *data,
 				    size_t len, loff_t *pos)
@@ -528,8 +540,15 @@ static ssize_t ouichefs_write(struct file *file, const char __user *data,
 }
 
 /*
- * Inserts a block number into the index block of a file by adding it after iblock
- * and keeping all the following blocks.
+ * ouichefs_insert_block_to_index() - Inserts a block number into the index
+ * block
+ *
+ * @index:	the index block to update
+ * @iblock:	the index of the block to insert after
+ * @new_block:	the block number to insert
+ *
+ * Inserts a block number into the index block of a file by adding it after
+ * iblock and keeping all the following blocks.
  */
 static void
 ouichefs_insert_block_to_index(struct ouichefs_file_index_block *index,
@@ -555,8 +574,11 @@ ouichefs_insert_block_to_index(struct ouichefs_file_index_block *index,
 /*
  * Write function for the ouichefs filesystem. This function allows to write data without
  * the use of page cache. This write function is the one that inserts data.
+ *
+ * In insert mode, blocks are numbered as follows in the index block:
+ *	- The 12 most significant bits represent the size of the block
+ *	- The 20 least significant bits represent the block number
  */
-
 static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 				     size_t len, loff_t *pos)
 {
@@ -734,6 +756,17 @@ static ssize_t ouichefs_write_insert(struct file *file, const char __user *data,
 	return written;
 }
 
+/*
+ * ouichefs_get_frag() - get stats about internal fragmentation
+ * @index: the index block of the file
+ * @part_filled_blocks: the pointer to the number of partially filled blocks
+ * @intern_frag_waste: the pointer to the number of bytes wasted
+ *
+ * This function retrieves the number of partially filled blocks and the
+ * internal fragmentation waste.
+ * The values are given through the pointers part_filled_blocks and
+ * intern_frag_waste.
+ */
 static void ouichefs_get_frag(struct inode *inode, uint32_t *part_filled_blocks,
 			      uint32_t *intern_frag_waste)
 {
@@ -765,7 +798,17 @@ static void ouichefs_get_frag(struct inode *inode, uint32_t *part_filled_blocks,
 }
 
 /*
- * ioctl
+ * This ioctl provides the following commands :
+ * - USED_BLKS:		get the number of blocks used by the file
+ * - PART_FILLED_BLKS:	get the number of partially filled blocks
+ * - INTERN_FRAG_WASTE:	get the number of bytes wasted due to internal
+ *			fragmentation
+ * - USED_BLKS_INFO:	get the list of all used blocks with their number
+ *			and effective size
+ * - DEFRAG:		defragment the file
+ * - SWITCH_MODE:	switch the read/write mode from normal to insert
+ *			and vice versa
+ * - DISPLAY_MODE:	diplay the current read/write mode
  */
 static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 				    unsigned long arg)
@@ -785,6 +828,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 
 	switch (cmd) {
 	case USED_BLKS:
+		/* USED_BLK : get the number of blocks used by the file */
 		char used_blocks_char[64];
 
 		snprintf(used_blocks_char, 64, "%llu", inode->i_blocks);
@@ -795,6 +839,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 		}
 		return 0;
 	case PART_FILLED_BLKS:
+		/* PART_FILLED_BLKS : get the number of partially filled blocks */
 		ouichefs_get_frag(inode, &part_filled_blocks,
 				  &intern_frag_waste);
 		char part_filled_blocks_char[64];
@@ -807,6 +852,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 		}
 		return 0;
 	case INTERN_FRAG_WASTE:
+		/* INTERN_FRAG_WASTE : get the number of bytes wasted due to internal fragmentation */
 		ouichefs_get_frag(inode, &part_filled_blocks,
 				  &intern_frag_waste);
 		char intern_frag_waste_char[64];
@@ -819,6 +865,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 		}
 		return 0;
 	case USED_BLKS_INFO:
+		/* USED_BLKS_INFO : get the list of all used blocks with their number and effective size */
 		bh_index = sb_bread(sb, ci->index_block);
 
 		if (!bh_index)
@@ -839,6 +886,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 
 		return 0;
 	case DEFRAG:
+		/* DEFRAG : defragment the file */
 		ouichefs_get_frag(inode, &part_filled_blocks,
 				  &intern_frag_waste);
 		uint32_t frag_last_block = 0;
@@ -846,8 +894,6 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 		bh_index = sb_bread(sb, ci->index_block);
 
 		while (intern_frag_waste - frag_last_block) {
-			frag_last_block = 0;
-
 			if (!bh_index)
 				return -EIO;
 
@@ -871,6 +917,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 				uint32_t to_be_filled =
 					OUICHEFS_BLOCK_SIZE - 1 - block_size;
 
+				/* On ne défragmente pas le dernier bloc, ça n'aurait pas de sens */
 				if (i == inode->i_blocks - 1) {
 					ouichefs_get_frag(inode,
 							  &part_filled_blocks,
@@ -879,6 +926,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 					break;
 				}
 
+				/* Récupération des infos du bloc suivant */
 				uint32_t next_block_size =
 					(index->blocks[i + 1] >> 20);
 				uint32_t next_block_number =
@@ -886,6 +934,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 				uint32_t to_be_moved =
 					min(to_be_filled, next_block_size);
 
+				/* Lecture des blocs courant et suivant */
 				struct buffer_head *bh =
 					sb_bread(sb, block_number);
 				struct buffer_head *bh_next =
@@ -897,6 +946,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 				char *buffer = bh->b_data;
 				char *buffer_next = bh_next->b_data;
 
+				/* Déplacement des données */
 				memcpy(buffer + block_size, buffer_next,
 				       to_be_moved);
 				memmove(buffer_next, buffer_next + to_be_moved,
@@ -905,9 +955,11 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 					       to_be_moved,
 				       0, to_be_moved);
 
+				/* Mise à jour des tailles des blocs */
 				block_size = block_size + to_be_moved;
 				next_block_size = next_block_size - to_be_moved;
 
+				/* Mise à jour des numéros de blocs dans l'index */
 				index->blocks[i] =
 					(block_size << 20) + block_number;
 				index->blocks[i + 1] = (next_block_size << 20) +
@@ -919,6 +971,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 				sync_dirty_buffer(bh);
 				sync_dirty_buffer(bh_next);
 
+				/* Décalage des blocs suivants d'un cran vers l'arrière dans l'index */
 				if (next_block_size == 0) {
 					for (uint32_t j = i + 1;
 					     j <= inode->i_blocks; j++) {
@@ -948,6 +1001,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 
 		return 0;
 	case SWITCH_MODE:
+		/* SWITCH_MODE : switch the read/write mode from normal to insert and vice versa */
 		if (!f->f_inode->i_fop)
 			return -ENOTTY;
 
@@ -963,6 +1017,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 
 		return 0;
 	case DISPLAY_MODE:
+		/* DISPLAY_MODE : diplay the current read/write mode */
 		char mode[7];
 
 		if (!fops)
@@ -980,6 +1035,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 
 		return 0;
 	default:
+		/* default : unknown command */
 		pr_warn("%s: unknown command\n", __func__);
 		return -ENOTTY;
 	}
