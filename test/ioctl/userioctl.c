@@ -57,6 +57,8 @@ int main(int argc, char **argv)
 	case 'l':
 		if (ioctl(fd, USED_BLKS_INFO, NULL) != 0)
 			perror("ioctl");
+		else
+			printf("Used blocks info displayed in dmesg.\n");
 		break;
 	case 'd':
 		if (ioctl(fd, DEFRAG) != 0)
