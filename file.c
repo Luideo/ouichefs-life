@@ -798,6 +798,141 @@ static void ouichefs_get_frag(struct inode *inode, uint32_t *part_filled_blocks,
 }
 
 /*
+ * ouichefs_defrag() - defragments a file
+ * @inode: the inode of the file to defragment
+ *
+ * This function defragments a file by moving data from a block that follows
+ * a partially filled block to the current partially filled block.
+ *
+ * Return: 0 on success, -EIO on error
+ */
+static long ouichefs_defrag(struct inode *inode)
+{
+	struct super_block *sb = inode->i_sb;
+	struct ouichefs_inode_info *ci = OUICHEFS_INODE(inode);
+	struct buffer_head *bh_index;
+	struct ouichefs_file_index_block *index;
+	uint32_t part_filled_blocks = 0;
+	uint32_t intern_frag_waste = 0;
+
+	ouichefs_get_frag(inode, &part_filled_blocks,
+				&intern_frag_waste);
+	uint32_t frag_last_block = 0;
+
+	bh_index = sb_bread(sb, ci->index_block);
+
+	while (intern_frag_waste - frag_last_block) {
+		if (!bh_index)
+			return -EIO;
+
+		index = (struct ouichefs_file_index_block *)
+				bh_index->b_data;
+
+		/*
+		 * Pour chaque bloc fragmenté qui n'est pas le dernier,
+		 * on "rapatrie" les données du bloc suivant dans le bloc
+		 * courant. Ceci entraine la fragmentation du bloc suivant,
+		 * mais on le traitera dans la prochaine itération du while.
+		 */
+		for (uint32_t i = 0; i < inode->i_blocks - 1; i++) {
+			/*
+			 * La taille du bloc correspond aux 12 premiers bits
+			 * du numéro de bloc présent dans le tableau d'index
+			 */
+			uint32_t block_size = (index->blocks[i] >> 20);
+			uint32_t block_number =
+				(index->blocks[i] & 0x000FFFFF);
+
+			if (block_size == (OUICHEFS_BLOCK_SIZE - 1))
+				continue;
+
+			uint32_t to_be_filled =
+				OUICHEFS_BLOCK_SIZE - 1 - block_size;
+
+			/* On ne défragmente pas le dernier bloc : absurdité */
+			if (i == inode->i_blocks - 1) {
+				ouichefs_get_frag(inode,
+							&part_filled_blocks,
+							&intern_frag_waste);
+				frag_last_block = to_be_filled;
+				break;
+			}
+
+			/* Récupération des infos du bloc suivant */
+			uint32_t next_block_size =
+				(index->blocks[i + 1] >> 20);
+			uint32_t next_block_number =
+				(index->blocks[i + 1] & 0x000FFFFF);
+			uint32_t to_be_moved =
+				min(to_be_filled, next_block_size);
+
+			/* Lecture des blocs courant et suivant */
+			struct buffer_head *bh =
+				sb_bread(sb, block_number);
+			struct buffer_head *bh_next =
+				sb_bread(sb, next_block_number);
+
+			if (!bh || !bh_next)
+				return -EIO;
+
+			char *buffer = bh->b_data;
+			char *buffer_next = bh_next->b_data;
+
+			/* Déplacement des données */
+			memcpy(buffer + block_size, buffer_next,
+				to_be_moved);
+			memmove(buffer_next, buffer_next + to_be_moved,
+				next_block_size - to_be_moved);
+			memset(buffer_next + next_block_size - to_be_moved,
+				0, to_be_moved);
+
+			/* Mise à jour des tailles des blocs */
+			block_size = block_size + to_be_moved;
+			next_block_size = next_block_size - to_be_moved;
+
+			/* Mise à jour des numéros de blocs dans l'index */
+			index->blocks[i] =
+				(block_size << 20) + block_number;
+			index->blocks[i + 1] = (next_block_size << 20) +
+						next_block_number;
+
+			mark_buffer_dirty(bh);
+			mark_buffer_dirty(bh_next);
+
+			sync_dirty_buffer(bh);
+			sync_dirty_buffer(bh_next);
+
+			/* Décalage des blocs suivants d'un cran vers l'arrière dans l'index */
+			if (next_block_size == 0) {
+				for (uint32_t j = i + 1;
+					j <= inode->i_blocks; j++) {
+					index->blocks[j] =
+						index->blocks[j + 1];
+				}
+				put_block(OUICHEFS_SB(sb),
+						next_block_number);
+				inode->i_blocks--;
+			}
+
+			brelse(bh);
+			brelse(bh_next);
+		}
+
+		mark_buffer_dirty(bh_index);
+
+		ouichefs_get_frag(inode, &part_filled_blocks,
+					&intern_frag_waste);
+	}
+
+	/* Put back the "block" zero at the end of the index */
+	index->blocks[inode->i_blocks] = 0;
+	inode->i_blocks++;
+
+	brelse(bh_index);
+	return 0;
+}
+
+/*
  * This ioctl provides the following commands :
  * - USED_BLKS:		get the number of blocks used by the file
  * - PART_FILLED_BLKS:	get the number of partially filled blocks
@@ -887,119 +1022,7 @@ static long ouichefs_unlocked_ioctl(struct file *f, uint32_t cmd,
 		return 0;
 	case DEFRAG:
 		/* DEFRAG : defragment the file */
-		ouichefs_get_frag(inode, &part_filled_blocks,
-				  &intern_frag_waste);
-		uint32_t frag_last_block = 0;
-
-		bh_index = sb_bread(sb, ci->index_block);
-
-		while (intern_frag_waste - frag_last_block) {
-			if (!bh_index)
-				return -EIO;
-
-			index = (struct ouichefs_file_index_block *)
-					bh_index->b_data;
-
-			/*
-			 * Pour chaque bloc fragmenté qui n'est pas le dernier, on "rapatrie" les données du bloc suivant
-			 * dans le bloc courant. Ceci entraine la fragmentation du bloc suivant, mais on le traitera dans la
-			 * prochaine itération du while.
-			 */
-			for (uint32_t i = 0; i < inode->i_blocks - 1; i++) {
-				/* La taille du bloc correspond aux 12 premiers bits du numéro de bloc */
-				uint32_t block_size = (index->blocks[i] >> 20);
-				uint32_t block_number =
-					(index->blocks[i] & 0x000FFFFF);
-
-				if (block_size == (OUICHEFS_BLOCK_SIZE - 1))
-					continue;
-
-				uint32_t to_be_filled =
-					OUICHEFS_BLOCK_SIZE - 1 - block_size;
-
-				/* On ne défragmente pas le dernier bloc, ça n'aurait pas de sens */
-				if (i == inode->i_blocks - 1) {
-					ouichefs_get_frag(inode,
-							  &part_filled_blocks,
-							  &intern_frag_waste);
-					frag_last_block = to_be_filled;
-					break;
-				}
-
-				/* Récupération des infos du bloc suivant */
-				uint32_t next_block_size =
-					(index->blocks[i + 1] >> 20);
-				uint32_t next_block_number =
-					(index->blocks[i + 1] & 0x000FFFFF);
-				uint32_t to_be_moved =
-					min(to_be_filled, next_block_size);
-
-				/* Lecture des blocs courant et suivant */
-				struct buffer_head *bh =
-					sb_bread(sb, block_number);
-				struct buffer_head *bh_next =
-					sb_bread(sb, next_block_number);
-
-				if (!bh || !bh_next)
-					return -EIO;
-
-				char *buffer = bh->b_data;
-				char *buffer_next = bh_next->b_data;
-
-				/* Déplacement des données */
-				memcpy(buffer + block_size, buffer_next,
-				       to_be_moved);
-				memmove(buffer_next, buffer_next + to_be_moved,
-					next_block_size - to_be_moved);
-				memset(buffer_next + next_block_size -
-					       to_be_moved,
-				       0, to_be_moved);
-
-				/* Mise à jour des tailles des blocs */
-				block_size = block_size + to_be_moved;
-				next_block_size = next_block_size - to_be_moved;
-
-				/* Mise à jour des numéros de blocs dans l'index */
-				index->blocks[i] =
-					(block_size << 20) + block_number;
-				index->blocks[i + 1] = (next_block_size << 20) +
-						       next_block_number;
-
-				mark_buffer_dirty(bh);
-				mark_buffer_dirty(bh_next);
-
-				sync_dirty_buffer(bh);
-				sync_dirty_buffer(bh_next);
-
-				/* Décalage des blocs suivants d'un cran vers l'arrière dans l'index */
-				if (next_block_size == 0) {
-					for (uint32_t j = i + 1;
-					     j <= inode->i_blocks; j++) {
-						index->blocks[j] =
-							index->blocks[j + 1];
-					}
-					put_block(OUICHEFS_SB(sb),
-						  next_block_number);
-					inode->i_blocks--;
-				}
-
-				brelse(bh);
-				brelse(bh_next);
-			}
-
-			mark_buffer_dirty(bh_index);
-
-			ouichefs_get_frag(inode, &part_filled_blocks,
-					  &intern_frag_waste);
-		}
-
-		/* Put back the "block" zero at the end of the index */
-		index->blocks[inode->i_blocks] = 0;
-		inode->i_blocks++;
-
-		brelse(bh_index);
-
-		return 0;
+		return ouichefs_defrag(inode);
 	case SWITCH_MODE:
 		/* SWITCH_MODE : switch the read/write mode from normal to insert and vice versa */
 		if (!f->f_inode->i_fop)
